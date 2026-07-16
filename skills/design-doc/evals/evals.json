@@ -1,0 +1,51 @@
+{
+  "skill_name": "design-doc",
+  "evals": [
+    {
+      "id": 0,
+      "name": "full-design-doc-async-pipeline",
+      "prompt": "うちのチームでB2B SaaSの契約書レビューサービスをやってるんだけど、ドキュメント解析パイプラインを今のモノリス内のcronベースのバッチ処理からキューベースの非同期ワーカー構成に移行したい。規模は月100万ドキュメントくらい、チームはエンジニア4人、本番で数年運用する前提。インフラはGCPで、キューはPub/SubかCloud Tasksかまだ決めきれてない。design docを書いてほしい。design-doc.mdというファイル名で保存して。",
+      "expected_output": "A well-structured Japanese design doc (design-doc.md) with standalone background, outcome-framed goals, non-goals, alternatives considered (Pub/Sub vs Cloud Tasks) with decisive factors or an honest open issue, measurable SLOs, and no fabricated specifics presented as fact.",
+      "files": [],
+      "assertions": [
+        "Doc is written in Japanese and saved as design-doc.md",
+        "Background/context section explains why the migration is needed and stands alone",
+        "Goals are framed as outcomes/benefits, not implementation choices",
+        "An explicit Non-goals section exists",
+        "Pub/Sub vs Cloud Tasks is handled honestly: comparison with decisive factor, or open issue with next step",
+        "Contains measurable quality targets with numbers, not only vague words",
+        "Does not fabricate business specifics presented as established fact"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "should-scale-down-trivial-change",
+      "prompt": "管理画面のユーザー一覧ページにCSVエクスポートボタンを追加する予定。実装は多分1日くらいで終わる想定。design docを書いてほしい。書いたらdoc.mdに保存して。",
+      "expected_output": "Recognizes that a full design doc is overkill for a one-day change (no risk indicators apply), says so, and produces a proportionally lightweight artifact (short note / mini-doc) rather than a 15-section heavyweight document.",
+      "files": [],
+      "assertions": [
+        "Explicitly tells the user a full design doc is disproportionate for a ~1-day change",
+        "Still delivers a lightweight artifact in doc.md (does not refuse outright)",
+        "doc.md is genuinely lightweight: no 10+ section boilerplate for a CSV export button",
+        "Relevant one-line decisions (data volume, permissions, encoding) mentioned briefly, not padded"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "improve-weak-existing-doc",
+      "prompt": "既存のdesign docのドラフトがweak-doc.mdにあるんだけど、正直イマイチな気がしてる。design docとしてレビューして、良いdesign docに書き直してほしい。書き直したものはimproved-doc.mdに保存して。",
+      "expected_output": "Identifies the draft's specific weaknesses (implementation-framed goals, no standalone background, missing non-goals, unmeasurable 'performant' claims, no alternatives considered) and rewrites it fixing those issues while keeping the original technical intent.",
+      "files": ["weak-doc.md"],
+      "assertions": [
+        "Review identifies implementation-framed goals as a weakness",
+        "Review identifies unmeasurable quality claims (高速/スケーラブル/高可用) as a weakness",
+        "Review identifies the missing background/why",
+        "improved-doc.md has a standalone background section (assumption/TODO if unknown, not fabricated fact)",
+        "improved-doc.md has an explicit Non-goals section",
+        "improved-doc.md replaces vague performance words with measurable targets or explicit open issues",
+        "improved-doc.md includes alternatives considered and/or open issues",
+        "Improved doc preserves the original technical intent (OpenSearch 2.11, Kubernetes, Go indexer)"
+      ]
+    }
+  ]
+}
