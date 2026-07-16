@@ -1,4 +1,4 @@
 interface:
   display_name: "Herdr Agent Workflow"
-  short_description: "Coordinate implementation and review agents"
-  default_prompt: "Use $herdr-agent-workflow to coordinate an implementation agent and an independent review agent in Herdr."
+  short_description: "Coordinate an implementation agent that reviews its own diff via Codex"
+  default_prompt: "Use $herdr-agent-workflow to coordinate an implementation agent in Herdr that also adversarially reviews its own diff via /codex:adversarial-review."

@@ -1,33 +1,38 @@
 ---
 name: herdr-agent-workflow
-description: Coordinate multi-agent implementation and review workflows inside Herdr. Use when the user wants one agent to implement changes, a separate independent agent to review them, and a coordinator to manage panes, prompts, waiting, review cycles, and final reporting without depending on specific agent products such as a particular implementation or review CLI.
+description: Coordinate an implementation-and-review workflow inside Herdr. Use when the user wants an agent to implement changes and then adversarially review its own diff, with a coordinator managing panes, prompts, waiting, review cycles, and final reporting. The implementation agent's product is not assumed, but by default it must be Claude Code with the `codex` plugin installed, since review runs in-process via `/codex:adversarial-review` rather than a separate review agent pane.
 ---
 
 # Herdr Agent Workflow
 
 ## Overview
 
-Use Herdr to coordinate a writer/reviewer loop across independent agent panes. Keep the workflow role-based: coordinator, implementation agent, and review agent.
+Use Herdr to run an implementation loop in a single agent pane. By default, the same pane that implements the change also runs the review step: it invokes `/codex:adversarial-review` (from the `codex` plugin) to get an adversarial critique from Codex, instead of a second agent/pane being spun up.
+
+Independence of the review is preserved by Codex itself, not by pane separation: `/codex:adversarial-review` shells out to the Codex CLI as a fresh, separate process against the current diff. Codex has no access to the implementation agent's reasoning or conversation history, so the critique is still adversarial and independent even though the same pane issues the command. Do not reintroduce a separate review pane by default on the theory that "the agent is grading its own homework" -- it isn't; Codex is the grader.
+
+Only fall back to a separate, independent review agent pane when the user explicitly asks for one (different reviewer product, or stronger isolation than an in-process command call) or when the implementation agent cannot run the codex plugin at all. See "Fallback: Separate Review Agent" at the end of this file.
 
 ## Preconditions
 
 - Run only inside Herdr. If `HERDR_ENV=1` is not set or `herdr` commands cannot reach the socket, tell the user to start the coordinator from a Herdr pane.
 - Treat pane IDs as opaque and unstable. Inspect current state before using them.
-- Do not hard-code agent product names. Use existing panes or user-provided commands for each role.
+- Do not hard-code agent product names when picking the implementation pane. Use existing panes or user-provided commands.
+- Exception: the default review path requires the implementation pane to run Claude Code with the `codex` plugin (marketplace `openai-codex`) installed, since that plugin provides `/codex:adversarial-review`. If the implementation agent is a different product, or Claude Code without that plugin, this in-process path is unavailable -- use the Fallback section instead of guessing.
+- The implementation pane needs permission to run `Bash(node:*)` and `Bash(git:*)` non-interactively (the command shells out to `codex-companion.mjs`, which shells out to `git`). If those are gated behind an approval prompt, the pane will stall on it and the coordinator has no way to clear it remotely -- check permissions before relying on this path, or expect to treat a long-idle pane as blocked-on-approval rather than done.
 
 ## Role Contract
 
 - **Coordinator**: the current agent using this skill. Owns orchestration, prompt routing, waiting, repository inspection, and final reporting.
-- **Implementation agent**: the only writer. It may edit files and run verification.
-- **Review agent**: independent reviewer. It must not edit files; it reviews the current diff and reports findings.
+- **Implementation agent**: the only writer, and the only pane in the default path. It edits files, runs verification, and -- when the coordinator asks it to -- runs the review step itself by invoking `/codex:adversarial-review`, which reviews the diff without editing anything.
 
-Never allow the implementation and review agents to edit files concurrently. If the review agent changes files, stop the loop, report the contamination, and ask the user how to proceed.
+With one pane and a foreground (`--wait`) review call, the review step blocks the implementation agent's turn, so implementation and review can never run concurrently in the default path. That guard only matters again in the Fallback section, where a second pane exists.
 
 ## Pane Setup
 
 1. Inspect Herdr state with `herdr agent list` and, when needed, `herdr pane list`.
-2. Reuse suitable panes when their cwd matches the target repo and their role is clear from recent output or pane labels.
-3. If a role pane is missing and the user supplied a command, create it:
+2. Reuse a suitable pane when its cwd matches the target repo and its role is clear from recent output or pane labels.
+3. If no implementation pane exists and the user supplied a command, create it:
 
 ```sh
 herdr pane split <current-pane-id> --direction right --cwd <repo> --no-focus
@@ -35,13 +40,13 @@ herdr pane run <new-pane-id> "<agent-command>"
 ```
 
 4. If the command output returns JSON with a new pane ID, parse it instead of guessing the ID.
-5. Optionally rename panes to role labels such as `impl` and `review` when that helps later inspection.
+5. Optionally rename the pane to a role label such as `impl` when that helps later inspection.
 
-If a required role cannot be mapped to an existing pane and no command was provided, ask the user for the implementation and review agent commands.
+If the implementation role cannot be mapped to an existing pane and no command was provided, ask the user for the implementation agent command.
 
 ## Status Polling Cadence
 
-Do not assume event-driven status notifications. While an implementation or review agent is working, the coordinator must poll status on a fixed cadence:
+Do not assume event-driven status notifications. While the implementation pane is working (whether on the implementation step or the review step), the coordinator must poll status on a fixed cadence:
 
 - Immediately after sending a prompt, confirm the target pane is mapped correctly with `herdr agent list`.
 - Poll `herdr agent list` every 30 seconds while waiting for the target pane.
@@ -68,12 +73,14 @@ herdr pane read <implementation-pane-id> --source recent-unwrapped
 ```
 
 5. Inspect repository state yourself with appropriate read-only commands such as `git status`, `git diff`, and test logs. Do not rely only on the implementation agent's summary.
-6. Send the review prompt to the review pane.
-7. Wait for the review agent to reach `done`, `blocked`, or `idle`, then read recent output. Treat `idle` as a required inspection point, not a clean review result; verify whether the review completed, stopped early, or needs a follow-up prompt.
-8. Evaluate the review result yourself before routing it. Compare findings against the diff, acceptance criteria, and verification output, then classify the result as `no findings`, `actionable fixes`, or `blocked/needs user input`.
-9. For actionable fixes, automatically send a Fix Prompt to the implementation agent without asking the user. Ask the user only when the fix would expand scope, require credentials or external approval, risk destructive changes, conflict with acceptance criteria, or require a product judgment the agents cannot make.
-10. Repeat implementation -> review until the review agent reports no findings, the max cycle count is reached, or a blocker needs user input. Prefer continuing the loop over stopping for routine review comments.
+6. Send the Review Prompt to the same implementation pane, instructing it to run `/codex:adversarial-review` itself.
+7. There is no sentinel for this step -- the command's own contract forces the pane to output Codex's review verbatim with nothing before or after, so it will not append a marker like `HERDR_REVIEW_DONE`. Detect completion purely through the Status Polling Cadence: wait for the pane to reach `done`, `blocked`, or `idle`, then read recent output. Treat `idle` as a required inspection point, not a clean review result; verify whether the review actually completed (Codex's findings are present) or the pane stalled (e.g. on an approval prompt) before assuming it finished.
+8. Evaluate the review result yourself before routing it. Compare findings against the diff, acceptance criteria, and verification output, then classify the result as `no findings`, `actionable fixes`, `design/approach challenge`, or `blocked/needs user input`.
+9. For actionable fixes, automatically send a Fix Prompt to the implementation pane without asking the user, wait for it to finish the fix (as in steps 3-5), then repeat from step 6 to re-review. Ask the user only when the fix would expand scope, require credentials or external approval, risk destructive changes, conflict with acceptance criteria, or require a product judgment the agent cannot make. Treat a `design/approach challenge` (the review questions the chosen approach itself, not a point defect) as needing user input rather than auto-routing a Fix Prompt, unless it resolves to a small, unambiguous point patch.
+10. Repeat implementation -> review until the review reports no findings, the max cycle count is reached, or a blocker needs user input. Prefer continuing the loop over stopping for routine review comments.
 11. Finish with final status, files changed, verification run, review result, and remaining risks.
+
+If `/codex:adversarial-review` is unavailable in the implementation pane (command not found, plugin missing, non-Claude-Code product) or repeatedly errors, stop and ask the user whether to fall back to a separate review agent pane (see Fallback) or a different review method, rather than silently skipping review.
 
 ## Implementation Prompt Template
 
@@ -94,6 +101,7 @@ Rules:
 - Preserve unrelated user changes.
 - Run the relevant verification commands, or explain why they could not be run.
 - When finished, summarize files changed, verification run, and unresolved issues.
+- After this, the coordinator will ask you to review your own diff using a Codex command -- stay in this pane rather than exiting.
 
 End with:
 HERDR_IMPL_DONE
@@ -101,34 +109,24 @@ HERDR_IMPL_DONE
 
 ## Review Prompt Template
 
-Send a prompt shaped like this to the review agent:
+Send this to the same implementation pane, and send *only* this -- no leading or trailing prose:
 
 ```text
-You are the independent review agent.
-
-Review the current uncommitted changes against this task:
-<objective>
-
-Acceptance criteria:
-<criteria>
-
-Rules:
-- Do not edit files.
-- Prioritize bugs, regressions, missing tests, risky assumptions, and acceptance-criteria gaps.
-- Findings first, ordered by severity, with file/line references.
-- Separate concrete required fixes from optional suggestions or questions.
-- If there are no findings, say that clearly and mention residual test risk.
-
-End with:
-HERDR_REVIEW_DONE
+/codex:adversarial-review --wait Review against this task: <objective>. Acceptance criteria: <criteria>.
 ```
+
+Everything after the command name becomes Codex's focus text, and the command's own contract already forces the pane to return Codex's output verbatim with nothing before or after (see `commands/adversarial-review.md` in the `codex` plugin). So:
+
+- Keep the focus text on the same line as the command, with no embedded newlines -- a newline would either get folded into the focus text or, depending on how the pane splits input, get treated as a separate line the model isn't expecting.
+- Do not add instructional prose ("let it run to completion", "don't fix anything yet") -- it would be read as more focus text for Codex, polluting what it's told to review against.
+- Do not ask for a `HERDR_REVIEW_DONE` sentinel here -- the command suppresses any commentary the pane would otherwise add, so the sentinel would never appear. Detect completion via the Status Polling Cadence instead (see Coordination Workflow step 7).
 
 ## Fix Prompt Template
 
 When review findings need fixes, send only the actionable findings:
 
 ```text
-The independent review found these issues. Please fix only these issues and keep the diff scoped:
+The Codex adversarial review found these issues. Please fix only these issues and keep the diff scoped:
 
 <findings>
 
@@ -148,3 +146,18 @@ Keep the final report concise:
 - `verified`: commands run and results
 - `review`: no findings or remaining findings
 - `risks`: anything not verified or requiring user judgment
+
+## Fallback: Separate Review Agent
+
+Use this only when the user explicitly asks for an independent reviewer pane (a different product, or isolation stronger than an in-process command call), or when the implementation pane cannot run `/codex:adversarial-review` at all.
+
+1. Bootstrap a second pane the same way as the implementation pane, running the user-specified review command (or `codex` if the user just wants "a separate agent" without naming a product):
+
+```sh
+herdr pane split <current-pane-id> --direction right --cwd <repo> --no-focus
+herdr pane run <new-pane-id> "<review-agent-command>"
+```
+
+2. Never allow the implementation and review agents to edit files concurrently in this mode. If the review agent changes files, stop the loop, report the contamination, and ask the user how to proceed.
+3. Send it the adversarial framing from the shared `adversarial-review` skill (`$HOME/.agents/skills/adversarial-review`) via the `$adversarial-review` marker if the product can resolve it, otherwise inline the framing (do not edit files; question the approach and assumptions, not just defects; findings first, ordered by severity; separate required fixes from design challenges and optional suggestions; end with `HERDR_REVIEW_DONE`).
+4. Otherwise, follow the same Coordination Workflow steps 6-9 against this separate pane instead of the implementation pane.
