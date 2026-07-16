@@ -1,0 +1,4 @@
+interface:
+  display_name: "Adversarial Review"
+  short_description: "Challenge the approach, not just the defects"
+  default_prompt: "Run an adversarial review of the current uncommitted changes: challenge the approach, design choices, tradeoffs, and assumptions, not just defects."
