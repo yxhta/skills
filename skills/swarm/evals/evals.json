@@ -40,7 +40,7 @@
       "id": 6,
       "name": "reviewers-are-independent-and-read-only",
       "prompt": "The swarm's first wave just landed — three workers implemented the auth middleware, the session store, and the token refresh path. Review it before we move on.",
-      "expected_output": "Reads config/swarm.toml for the reviewer roster and dispatches 2-3 reviewers in parallel with deliberately different inputs (diff-only, spec-conformance, shortcut hunter), varying provider and model. Tells each to report everything including low-confidence findings, and requires file:line on every finding. Reviewers report only and never edit. The planner does the triage itself and routes real findings back to the originating worker via SendMessage rather than spawning fresh agents.",
+      "expected_output": "Dispatches 2-3 reviewers in parallel with deliberately different inputs, using the default roster (diff:codex, spec:sonnet, shortcut:haiku) since no --reviewers flag was passed, and varying provider and model. Tells each to report everything including low-confidence findings, and requires file:line on every finding. Reviewers report only and never edit. The planner does the triage itself and routes real findings back to the originating worker via SendMessage rather than spawning fresh agents.",
       "files": []
     },
     {
@@ -54,20 +54,20 @@
       "id": 8,
       "name": "codex-plugin-missing-falls-back",
       "prompt": "Run a swarm on spec/parsers.md — four independent parser modules, tests already written. Review each wave before moving on.",
-      "expected_output": "Reads config/swarm.toml, sees a codex reviewer configured, and resolves CODEX_PLUGIN_ROOT before the first review wave. If the plugin is absent or the CLI is unauthenticated, applies [codex].on_missing rather than improvising: substitutes a Claude reviewer on fallback_model while KEEPING the diff-only vantage, and discloses the substitution in the final report. The failure this tests is silently dropping the vantage and reviewing the wave from two angles while reporting it as three.",
+      "expected_output": "The default reviewer roster puts Codex on the diff vantage, so resolves CODEX_PLUGIN_ROOT before the first review wave. If the plugin is absent or the CLI is unauthenticated, substitutes a Claude reviewer on sonnet while KEEPING the diff vantage, and discloses the substitution in the final report. Does not stop to ask, since the user never named Codex. The failure this tests is silently dropping the vantage and reviewing the wave from two angles while reporting it as three.",
       "files": []
     },
     {
       "id": 9,
       "name": "codex-model-and-effort-routing",
-      "prompt": "Swarm the refactor in docs/plan.md. For the Codex reviewer I want a specific GPT model and high reasoning effort — put that in the config so it sticks for future runs too.",
-      "expected_output": "Writes the model and effort into the reviewer's entry in config/swarm.toml (or swarm.local.toml) rather than hardcoding flags into one dispatch. Recognizes that effort only takes effect on codex_command = \"task\" — the native review and adversarial-review entry points parse --model but ignore --effort — and either switches that reviewer to \"task\" or tells the user the effort would be silently dropped. Does not invent a model name: if unsure what the installed CLI accepts, checks rather than guessing, since an unknown name fails at dispatch and costs the vantage.",
+      "prompt": "/swarm docs/plan.md --reviewers diff:codex,spec:sonnet --codex-model spark --codex-effort high",
+      "expected_output": "Runs exactly two reviewers, diff on Codex and spec on sonnet, rather than adding the third default vantage. Passes --model spark through to the companion script. Recognizes that --effort is only honoured by the codex-task entry point — the native review and adversarial-review entry points parse --model but ignore --effort — and either switches that reviewer to codex-task or says plainly that the requested effort is being dropped. Silently passing --effort to review and reporting it as applied is the failure this tests.",
       "files": []
     },
     {
       "id": 10,
       "name": "codex-review-blocks-the-wave",
-      "prompt": "Wave 2 is done. Run all three configured reviewers and the acceptance check.",
+      "prompt": "Wave 2 is done. Run all three reviewers and the acceptance check.",
       "expected_output": "Launches the reviewers so they actually run concurrently. Knows that codex task --background is genuinely async but codex review / adversarial-review accept --background and ignore it, so those go through Bash with run_in_background: true rather than being called inline. Runs the acceptance check itself while the reviewers work. Calls codex status and result from the same working directory the job was launched from, since job state is keyed by cwd and a mismatched cwd reports 'No job found' for a healthy job.",
       "files": []
     }

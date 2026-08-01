@@ -1,7 +1,7 @@
 ---
 name: swarm
 description: Run a planner/worker agent swarm on a large task. Use when the user says "run a swarm", "fan this out", "parallelize this across agents", or hands over work big enough that a single agent would drift: implementing a spec or RFC end to end, porting or rewriting a subsystem, building something from a document, or sweeping a whole codebase (test coverage, a migration, a batch of fixes). Do NOT use when the task fits comfortably in one agent's context or splits into fewer than three genuinely independent units — coordination overhead loses to just doing the work.
-argument-hint: [task or path to a spec]
+argument-hint: [task or path to a spec] [--workers <models>] [--reviewers <list>] [--codex-model <name>] [--codex-effort <level>]
 ---
 
 # Swarm
@@ -36,20 +36,34 @@ the worker role.
   changes.
 - An objective acceptance check you can run yourself (test suite, build, lint, a script you
   write). Without one you cannot tell progress from plausible-looking churn.
-- Role models come from `config/swarm.toml` in this skill's directory, overridden per-key by
-  `config/swarm.local.toml` if it exists. Read both before the first wave. If neither is present,
-  fall back to `haiku` workers and three Claude reviewers, and say so.
-- Only if that config names a `codex` reviewer: the `codex` plugin must be installed and its CLI
-  authenticated. Resolve the runtime once and reuse it:
+- Only if a `codex` reviewer is in play (see **Arguments**): the `codex` plugin must be installed
+  and its CLI authenticated. Resolve the runtime once and reuse it:
 
 ```sh
 CODEX_PLUGIN_ROOT=$(ls -d "$HOME/.claude/plugins/cache/openai-codex/codex"/*/ 2>/dev/null | sort -V | tail -1)
 ```
 
   If that resolves to nothing, or a companion-script call reports a missing or unauthenticated
-  CLI, apply `[codex].on_missing`: `substitute` swaps in a Claude reviewer on `fallback_model`
-  keeping the vantage, and the substitution goes in the final report; `stop` halts and tells the
-  user to install the plugin or run `/codex:setup`. Never silently drop the vantage.
+  CLI, substitute a Claude reviewer on `sonnet` **keeping the vantage**, and disclose the
+  substitution in the final report. Never silently drop the vantage — a wave reviewed from two
+  angles instead of three is a weaker result than it looks. Stop and tell the user to run
+  `/codex:setup` only if they asked for Codex explicitly and a substitute would not answer their
+  question.
+
+## Arguments
+
+Everything here is optional. The defaults are calibrated, not arbitrary — read the rationale in
+**Assign models** and **Review vantage points** before overriding them.
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--workers <models>` | `mechanical=haiku,implementation=sonnet` | Worker model, either one name for every worker (`--workers haiku`) or per leaf kind. |
+| `--reviewers <list>` | `diff:codex,spec:sonnet,shortcut:haiku` | Comma-separated `vantage:runner`. Vantage is `diff`, `spec`, or `shortcut`. Runner is a Claude model (`haiku`, `sonnet`, `opus`) or a Codex entry point (`codex` = native `review`, `codex-adversarial`, `codex-task`). A bare runner with no vantage takes the next unused default vantage. |
+| `--codex-model <name>` | Codex's own default | Passed through as `--model`. `spark` expands to `gpt-5.3-codex-spark`. |
+| `--codex-effort <level>` | Codex's own default | One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. **Only `codex-task` honours it** — the native review entry points parse `--model` but ignore `--effort`. If effort is set alongside a non-`task` runner, switch that runner to `codex-task` or say the effort is being dropped. |
+
+The user's flags win over your judgment about the wave. Deviating from a flag they passed needs a
+reason stated in `design.md` and in the final report, not a silent substitution.
 
 ## Role Contract
 
@@ -150,11 +164,12 @@ diff already says.
      When two leaves genuinely cannot be made disjoint, either sequence them across waves or give
      each worker `isolation: "worktree"` and integrate the results yourself.
 
-4. **Assign models.** Planner stays on the strongest model available. Everything else comes from
-   `config/swarm.toml`: classify each leaf as `mechanical` or `implementation` and take the
-   worker model from `[worker]`; take the reviewer roster from the `[[reviewer]]` entries.
-   Deviate from the config only when the wave gives you a reason to, and record the reason in
-   `design.md` — the config is the default, not a cage.
+4. **Assign models.** Planner stays on the strongest model available. For everything else, start
+   from `--workers` and `--reviewers` (or their defaults): classify each leaf as `mechanical` or
+   `implementation` and take the worker model from that; take the reviewer roster from the
+   vantage list. Deviate only when the wave gives you a reason to, and record the reason in
+   `design.md` — a default is a default, not a cage, but a flag the user actually passed is
+   closer to an instruction.
 
    Workers dominate token volume and the planner dominates cost, so the payoff is in briefing
    quality: once the planner has turned ambiguity into an explicit instruction, a cheap model
@@ -171,18 +186,18 @@ diff already says.
    subagent, and a `provider = "codex"` reviewer through the companion script:
 
 ```sh
-# codex_command = "task" — a free-form vantage. Omit --write: that is what keeps it read-only.
+# runner "codex-task" — a free-form vantage. Omit --write: that is what keeps it read-only.
 # Genuinely asynchronous: returns a job id, then collect with `status` and `result`.
 node "${CODEX_PLUGIN_ROOT}/scripts/codex-companion.mjs" task --background "<reviewer prompt>"
 
-# codex_command = "review" or "adversarial-review" — diff-scoped native review.
+# runner "codex" or "codex-adversarial" — diff-scoped native review.
 node "${CODEX_PLUGIN_ROOT}/scripts/codex-companion.mjs" review --scope working-tree
 ```
 
-   Pass `--model` when the config sets one, and `--effort` only for `task` — the native review
-   entry points accept `--model` but silently ignore `--effort`. An unknown model name fails at
-   dispatch, so treat that like a missing plugin and apply `[codex].on_missing` rather than losing
-   the vantage.
+   Pass `--model` when `--codex-model` was given, and `--effort` only to `task` — the native
+   review entry points accept `--model` but silently ignore `--effort`. An unknown model name
+   fails at dispatch, so treat that like a missing plugin: substitute, keep the vantage, disclose.
+   Do not invent a model name the user did not ask for.
 
    The two entry points differ in a way that matters for wave timing. `task --background` really
    does background. `review` and `adversarial-review` accept `--background` but ignore it and run
@@ -309,16 +324,16 @@ Done when: no `import requests` remains in the file and `pytest tests/billing` p
 
 ## Review vantage points
 
-Pick 2–3 with deliberately different inputs. The `[[reviewer]]` entries in `config/swarm.toml`
-name which vantages are configured and who runs each.
+Pick 2–3 with deliberately different inputs. `--reviewers` names which vantages run and who runs
+each; these are the three vantages it can name.
 
-- **Diff-only** — sees `git diff` and nothing else. Catches defects in the code as written. This
-  is what Codex's native `review` and `adversarial-review` already are, which is why the shipped
-  config points them here.
-- **Spec-conformance** — sees `spec.md` and the resulting code, but not the diff or the briefs.
-  Catches building the right thing badly *and* the wrong thing well.
-- **Shortcut hunter** — sees the brief, the worker's report, and the diff. Catches stubs, faked
-  tests, hardcoded values, and reports that overstate what was done.
+- **Diff-only** (`diff`) — sees `git diff` and nothing else. Catches defects in the code as
+  written. This is what Codex's native `review` and `adversarial-review` already are, which is why
+  `diff:codex` is the default.
+- **Spec-conformance** (`spec`) — sees `spec.md` and the resulting code, but not the diff or the
+  briefs. Catches building the right thing badly *and* the wrong thing well.
+- **Shortcut hunter** (`shortcut`) — sees the brief, the worker's report, and the diff. Catches
+  stubs, faked tests, hardcoded values, and reports that overstate what was done.
 
 Vary the model *and the provider* between reviewers where you can; correlated reviewers miss the
 same things, and a different provider decorrelates harder than a different model from the same
@@ -368,7 +383,7 @@ and clear conflict, choose clear.
 - `status`: complete, blocked, or stopped after max waves
 - `spec`: what was built, and the acceptance-check result with the actual command output
 - `waves`: per wave — leaves dispatched, the worker and reviewer models and providers actually
-  used, findings, check result. Say plainly if a configured reviewer was substituted or dropped,
+  used, findings, check result. Say plainly if a reviewer was substituted or dropped,
   and why: a wave reviewed by two vantages instead of three is a weaker result than it looks.
 - `decisions`: design decisions made on the user's behalf (from `design.md`), one line of
   rationale each
