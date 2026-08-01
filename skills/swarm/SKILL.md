@@ -36,19 +36,21 @@ the worker role.
   changes.
 - An objective acceptance check you can run yourself (test suite, build, lint, a script you
   write). Without one you cannot tell progress from plausible-looking churn.
-- Only if a `codex` reviewer is in play (see **Arguments**): the `codex` plugin must be installed
-  and its CLI authenticated. Resolve the runtime once and reuse it:
+- The `codex` plugin, installed and its CLI authenticated. Every reviewer runs on Codex by
+  default, so this is a default dependency of the review step rather than an optional extra.
+  Resolve the runtime once, before the first review wave, and reuse it:
 
 ```sh
 CODEX_PLUGIN_ROOT=$(ls -d "$HOME/.claude/plugins/cache/openai-codex/codex"/*/ 2>/dev/null | sort -V | tail -1)
 ```
 
   If that resolves to nothing, or a companion-script call reports a missing or unauthenticated
-  CLI, substitute a Claude reviewer on `sonnet` **keeping the vantage**, and disclose the
-  substitution in the final report. Never silently drop the vantage — a wave reviewed from two
-  angles instead of three is a weaker result than it looks. Stop and tell the user to run
-  `/codex:setup` only if they asked for Codex explicitly and a substitute would not answer their
-  question.
+  CLI, substitute Claude reviewers **keeping every vantage** — `sonnet` for `diff` and `spec`,
+  `haiku` for `shortcut` — and disclose the substitution in the final report. Never silently drop
+  a vantage: a wave reviewed from two angles instead of three is a weaker result than it looks.
+  Check this before the first wave, not after it, so you are not discovering it with five workers
+  already dispatched. Stop and tell the user to run `/codex:setup` only if they named Codex
+  explicitly and a Claude substitute would not answer their question.
 
 ## Arguments
 
@@ -57,8 +59,8 @@ Everything here is optional. The defaults are calibrated, not arbitrary — read
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `--workers <models>` | `mechanical=haiku,implementation=sonnet` | Worker model, either one name for every worker (`--workers haiku`) or per leaf kind. |
-| `--reviewers <list>` | `diff:codex,spec:sonnet,shortcut:haiku` | Comma-separated `vantage:runner`. Vantage is `diff`, `spec`, or `shortcut`. Runner is a Claude model (`haiku`, `sonnet`, `opus`) or a Codex entry point (`codex` = native `review`, `codex-adversarial`, `codex-task`). A bare runner with no vantage takes the next unused default vantage. |
+| `--workers <models>` | `sonnet` | Worker model, either one name for every worker (`--workers sonnet`) or per leaf kind (`--workers mechanical=haiku,implementation=sonnet`). |
+| `--reviewers <list>` | `diff:codex,spec:codex-task,shortcut:codex-task` | Comma-separated `vantage:runner`. Vantage is `diff`, `spec`, or `shortcut`. Runner is a Claude model (`haiku`, `sonnet`, `opus`) or a Codex entry point (`codex` = native `review`, `codex-adversarial`, `codex-task`). A bare runner with no vantage takes the next unused default vantage. |
 | `--codex-model <name>` | Codex's own default | Passed through as `--model`. `spark` expands to `gpt-5.3-codex-spark`. |
 | `--codex-effort <level>` | Codex's own default | One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. **Only `codex-task` honours it** — the native review entry points parse `--model` but ignore `--effort`. If effort is set alongside a non-`task` runner, switch that runner to `codex-task` or say the effort is being dropped. |
 
@@ -171,9 +173,11 @@ diff already says.
    `design.md` — a default is a default, not a cage, but a flag the user actually passed is
    closer to an instruction.
 
-   Workers dominate token volume and the planner dominates cost, so the payoff is in briefing
-   quality: once the planner has turned ambiguity into an explicit instruction, a cheap model
-   just follows it.
+   The worker default is `sonnet` for every leaf, mechanical ones included. Workers dominate token
+   volume, so dropping the mechanical leaves to `haiku` is the obvious saving — but it is a saving
+   the planner has to earn with a brief precise enough that a cheaper model cannot go wrong, and a
+   worker that misreads its leaf costs a whole wave. Take it deliberately, per wave, with
+   `--workers mechanical=haiku,implementation=sonnet`; do not assume it.
 
    **Workers are always Claude subagents.** The two mechanisms workers depend on — file ownership
    enforced by dispatching through `Agent` with an explicit file list, and findings routed back to
@@ -181,9 +185,9 @@ diff already says.
    does not expose. `--resume-last` reaches only the most recent Codex job, so with several Codex
    workers in flight there is no way to send a finding to the right one.
 
-   **Reviewers may be either.** A reviewer reads and reports; it needs no file ownership and no
-   continuity, so nothing above binds it. Dispatch a `provider = "claude"` reviewer as a read-only
-   subagent, and a `provider = "codex"` reviewer through the companion script:
+   **Reviewers may be either, and default to Codex.** A reviewer reads and reports; it needs no
+   file ownership and no continuity, so nothing above binds it. Dispatch a Claude runner as a
+   read-only subagent, and a Codex runner through the companion script:
 
 ```sh
 # runner "codex-task" — a free-form vantage. Omit --write: that is what keeps it read-only.
@@ -203,7 +207,13 @@ node "${CODEX_PLUGIN_ROOT}/scripts/codex-companion.mjs" review --scope working-t
    does background. `review` and `adversarial-review` accept `--background` but ignore it and run
    to completion in the foreground, so launch those through Bash with `run_in_background: true`
    instead — otherwise one Codex reviewer serializes the whole wave and you lose the parallelism
-   the review step depends on. Either way, run the acceptance check while the reviewers work.
+   the review step depends on. The default roster is exactly this mix: one blocking `review` plus
+   two async `task` calls. Either way, run the acceptance check while the reviewers work.
+
+   `--codex-effort` reaches the two `codex-task` reviewers and is dropped by the `diff:codex` one.
+   If the user passed an effort and cares that it applies everywhere, switch that reviewer to
+   `codex-adversarial`… which ignores effort too, so the honest move is to move it to `codex-task`
+   or tell them the diff vantage runs at Codex's default effort.
 
    Codex job state is keyed by working directory. Run `task`, `status`, and `result` from the same
    cwd — from anywhere else `status` reports `No job found` for a job that is running fine, which
@@ -335,11 +345,18 @@ each; these are the three vantages it can name.
 - **Shortcut hunter** (`shortcut`) — sees the brief, the worker's report, and the diff. Catches
   stubs, faked tests, hardcoded values, and reports that overstate what was done.
 
-Vary the model *and the provider* between reviewers where you can; correlated reviewers miss the
-same things, and a different provider decorrelates harder than a different model from the same
-family. Review accuracy holds up well on cheap models in general, but not uniformly: spec
-conformance is the vantage that degrades first, because it requires holding the spec and the code
-side by side rather than reacting to a diff. Do not put it on the cheapest model available.
+Correlated reviewers miss the same things, so decorrelate them however the roster allows. The
+default roster is all-Codex, which buys strong reviewers at the cost of provider diversity: three
+reviewers from one family share their blind spots, and a defect none of them is disposed to see
+survives all three. Two ways to buy the diversity back when a wave is load-bearing enough to want
+it — vary `--codex-model` across the reviewers, or move one vantage to a Claude runner
+(`--reviewers diff:codex,spec:sonnet,shortcut:codex-task`). Say which you did in the wave log, and
+say it plainly when you did neither.
+
+Review accuracy holds up well on cheap models in general, but not uniformly: spec conformance is
+the vantage that degrades first, because it requires holding the spec and the code side by side
+rather than reacting to a diff. If you put it on a Claude runner, do not put it on the cheapest
+model available.
 
 Tell each reviewer to report **everything it finds**, low-confidence items included, and do the
 triage yourself in step 9. Asking a reviewer to be conservative or to report only high-severity

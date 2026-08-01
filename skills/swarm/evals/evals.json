@@ -40,7 +40,7 @@
       "id": 6,
       "name": "reviewers-are-independent-and-read-only",
       "prompt": "The swarm's first wave just landed — three workers implemented the auth middleware, the session store, and the token refresh path. Review it before we move on.",
-      "expected_output": "Dispatches 2-3 reviewers in parallel with deliberately different inputs, using the default roster (diff:codex, spec:sonnet, shortcut:haiku) since no --reviewers flag was passed, and varying provider and model. Tells each to report everything including low-confidence findings, and requires file:line on every finding. Reviewers report only and never edit. The planner does the triage itself and routes real findings back to the originating worker via SendMessage rather than spawning fresh agents.",
+      "expected_output": "Dispatches 2-3 reviewers in parallel with deliberately different inputs, using the default all-Codex roster (diff:codex, spec:codex-task, shortcut:codex-task) since no --reviewers flag was passed. Launches the blocking native review through Bash with run_in_background so it does not serialize the wave, and notes that an all-Codex roster gives up provider diversity. Tells each to report everything including low-confidence findings, and requires file:line on every finding. Reviewers report only and never edit. The planner does the triage itself and routes real findings back to the originating worker via SendMessage rather than spawning fresh agents.",
       "files": []
     },
     {
@@ -54,7 +54,7 @@
       "id": 8,
       "name": "codex-plugin-missing-falls-back",
       "prompt": "Run a swarm on spec/parsers.md — four independent parser modules, tests already written. Review each wave before moving on.",
-      "expected_output": "The default reviewer roster puts Codex on the diff vantage, so resolves CODEX_PLUGIN_ROOT before the first review wave. If the plugin is absent or the CLI is unauthenticated, substitutes a Claude reviewer on sonnet while KEEPING the diff vantage, and discloses the substitution in the final report. Does not stop to ask, since the user never named Codex. The failure this tests is silently dropping the vantage and reviewing the wave from two angles while reporting it as three.",
+      "expected_output": "Every reviewer runs on Codex by default, so resolves CODEX_PLUGIN_ROOT before the FIRST wave rather than discovering the problem after workers are already dispatched. If the plugin is absent or the CLI is unauthenticated, substitutes Claude reviewers while KEEPING all three vantages (sonnet for diff and spec, haiku for shortcut), and discloses the substitution in the final report. Does not stop to ask, since the user never named Codex. The failure this tests is silently dropping vantages and reviewing the wave from fewer angles while reporting it as three.",
       "files": []
     },
     {
