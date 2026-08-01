@@ -1,0 +1,47 @@
+{
+  "skill_name": "swarm",
+  "evals": [
+    {
+      "id": 1,
+      "name": "spec-to-implementation-should-swarm",
+      "prompt": "docs/rfc-042-billing.md is the accepted RFC for our new billing subsystem. It covers the invoice model, a proration engine, a webhook receiver for the payment provider, a retry/dead-letter path for failed charges, and a CLI for manual adjustments. None of it is built yet — the package directory is empty apart from __init__.py. Build it out.",
+      "expected_output": "Invokes the swarm skill. Normalizes the RFC into .swarm/spec.md, defines an acceptance check it runs itself (test suite / build), decomposes into leaves with disjoint file ownership, records design decisions in .swarm/design.md rather than delegating them, and dispatches workers as parallel Agent calls in a single response block with self-contained briefs. Does not implement leaves itself.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "codebase-sweep-should-swarm",
+      "prompt": "We're migrating off moment.js. It's imported in 23 files across src/reports, src/scheduling, src/billing, and src/notifications, plus a handful of test helpers. Replace every usage with date-fns, keep behavior identical, and get the suite green.",
+      "expected_output": "Invokes the swarm skill: a wide, mechanical sweep across independent directories is the canonical fit. Partitions file ownership by directory so workers never collide, fixes the date-fns call conventions as binding decisions up front (so subtrees don't each invent their own), assigns cheap models to the mechanical leaves, and runs the test suite itself as the acceptance check rather than telling workers to make tests pass.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "small-task-should-not-swarm",
+      "prompt": "Add a --json flag to our `report` CLI so it prints the existing Summary object as JSON instead of the formatted table. It's all in src/cli/report.ts.",
+      "expected_output": "Does NOT invoke the swarm skill and just makes the change. One file, one edit — well under the three-independent-leaves floor, so coordination overhead would exceed the work. A swarm here is a false positive.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "two-leaves-should-not-swarm",
+      "prompt": "Run a swarm on this: I need the /users and /orders endpoints both converted from callbacks to async/await. src/api/users.js and src/api/orders.js.",
+      "expected_output": "Reads the skill, then says plainly that the task splits into two leaves — below the skill's own three-leaf precondition — and does the work directly instead. Tests that the explicit 'run a swarm' phrasing does not override the precondition check.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "name": "planner-does-not-implement",
+      "prompt": "Swarm this: implement the four parsers described in spec/parsers.md (semver, csv, glob, duration). Each is a standalone module with no cross-imports. I've already written the test suite in tests/.",
+      "expected_output": "Dispatches one worker per parser in a single parallel block and does not write parser code itself. Briefs pin the public interfaces (exact signatures, error types) as planner decisions so the four workers cannot each invent a different convention. Marks tests/ as planner-owned and off-limits to workers, then runs the suite itself and triages findings rather than asking the user to arbitrate them.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "name": "reviewers-are-independent-and-read-only",
+      "prompt": "The swarm's first wave just landed — three workers implemented the auth middleware, the session store, and the token refresh path. Review it before we move on.",
+      "expected_output": "Dispatches 2-3 reviewers in parallel on cheap models with deliberately different inputs (diff-only, spec-conformance, shortcut hunter), tells each to report everything including low-confidence findings, and requires file:line on every finding. Reviewers report only and never edit. The planner does the triage itself and routes real findings back to the originating worker via SendMessage rather than spawning fresh agents.",
+      "files": []
+    }
+  ]
+}

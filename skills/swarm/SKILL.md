@@ -187,6 +187,8 @@ meant to remove.
 <role>You are implementing one leaf of a plan another agent made. The brief is complete
 on purpose — work from it rather than reconstructing the larger plan.</role>
 
+<workspace>absolute path to the repository root, plus the exact command that runs the
+leaf's check</workspace>
 <binding_decisions>verbatim entries from design.md that constrain this leaf</binding_decisions>
 <interfaces>exact signatures, schemas, and names the planner fixed — match them</interfaces>
 <gotchas>relevant lines from field-guide.md</gotchas>
@@ -225,6 +227,7 @@ Filled in (the fixed `<role>`, `<rules>`, and `<report_back>` blocks go in verba
 omitted here), a brief is this short:
 
 ```
+<workspace>/home/me/src/acme — run `pytest tests/billing` from there.</workspace>
 <binding_decisions>
 - Retries live in the transport layer. Call sites stay unaware of them.
 - Every request passes an explicit timeout; there is no implicit default anywhere.
