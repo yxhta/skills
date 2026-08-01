@@ -1,0 +1,79 @@
+# Which model runs each swarm role.
+#
+# The planner always runs on the strongest model available and is never configured here —
+# it is whichever model the user started the session on.
+#
+# To override without touching this file, create config/swarm.local.toml with the same
+# keys. It is gitignored. Keys present there replace the ones here; keys absent there fall
+# back to this file.
+
+[worker]
+# Workers are always Claude subagents. Codex cannot be a worker: file ownership is enforced
+# by dispatching each worker through the Agent tool with an explicit file list, and findings
+# are routed back to a specific worker with SendMessage. Neither survives the Codex runtime,
+# which has no per-agent identity to send to.
+#
+# "mechanical" — renames, mechanical ports, applying a fixed pattern across files.
+# "implementation" — real code the worker has to reason about.
+# "default" — used when the planner cannot classify the leaf.
+mechanical = "haiku"
+implementation = "sonnet"
+default = "haiku"
+
+# Reviewers. The planner runs 2-3 of these per wave, in parallel, picking the vantages that
+# fit the wave. Order here is preference order, not execution order.
+#
+# provider = "claude" — dispatched as a read-only subagent via the Agent tool. Requires `model`.
+# provider = "codex"  — dispatched through the codex plugin's companion script, read-only.
+#                       `codex_command` picks the entry point:
+#                         "review"              — native diff review, diff-scoped
+#                         "adversarial-review"  — native review that challenges the approach
+#                         "task"                — a free-form read-only prompt, for vantages
+#                                                 the native reviews do not cover
+#
+# Codex model selection. Both keys are optional — leave a key out entirely to take Codex's
+# own default, which is usually what you want.
+#
+#   model  — any model name the installed Codex CLI accepts, passed through as --model.
+#            The alias "spark" is expanded by the plugin to "gpt-5.3-codex-spark".
+#            Do not pin a model name here speculatively: an unknown name fails at dispatch
+#            and costs you the vantage. Check what your CLI offers first.
+#            Accepted by all three codex_command values.
+#   effort — one of none, minimal, low, medium, high, xhigh.
+#            ONLY "task" accepts this. The native "review" and "adversarial-review" entry
+#            points parse --model but not --effort, so an effort set alongside them is
+#            silently ignored. Use codex_command = "task" when effort matters.
+#
+# Vary the provider and the model across the reviewers in a wave. Correlated reviewers miss
+# the same things, and provider is the strongest decorrelator available here — in the run
+# this config was calibrated against, the Codex reviewer found a real defect that all three
+# Claude reviewers missed.
+
+[[reviewer]]
+vantage = "diff-only"
+provider = "codex"
+codex_command = "review"
+# model = "spark"
+
+[[reviewer]]
+# Deliberately not on the cheapest model. In the run this default was calibrated against,
+# a spec-conformance reviewer on haiku reported "no violations" on a wave that contained
+# four real conformance defects, all of which a stronger diff-only reviewer caught.
+vantage = "spec-conformance"
+provider = "claude"
+model = "sonnet"
+
+[[reviewer]]
+vantage = "shortcut-hunter"
+provider = "claude"
+model = "haiku"
+
+[codex]
+# What to do when the codex plugin is missing or its CLI is unauthenticated. The planner
+# checks this once, before the first review wave.
+#
+# "substitute" — replace each codex reviewer with a claude reviewer on `fallback_model`,
+#                keeping the vantage, and disclose the substitution in the final report.
+# "stop"       — halt and tell the user to install the plugin or run /codex:setup.
+on_missing = "substitute"
+fallback_model = "sonnet"

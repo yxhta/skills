@@ -24,7 +24,8 @@ a swarm is probabilistic at every stage. The decision ledger, the ownership part
 layered review are the error-correction that makes lowering a spec into code survivable.
 
 Requires Claude Code's `Agent` tool. There is no Codex-side equivalent, so this skill ships no
-`agents/openai.yaml`.
+`agents/openai.yaml`. Codex can still hold the reviewer role — see **Assign models** — but never
+the worker role.
 
 ## Preconditions
 
@@ -35,6 +36,20 @@ Requires Claude Code's `Agent` tool. There is no Codex-side equivalent, so this 
   changes.
 - An objective acceptance check you can run yourself (test suite, build, lint, a script you
   write). Without one you cannot tell progress from plausible-looking churn.
+- Role models come from `config/swarm.toml` in this skill's directory, overridden per-key by
+  `config/swarm.local.toml` if it exists. Read both before the first wave. If neither is present,
+  fall back to `haiku` workers and three Claude reviewers, and say so.
+- Only if that config names a `codex` reviewer: the `codex` plugin must be installed and its CLI
+  authenticated. Resolve the runtime once and reuse it:
+
+```sh
+CODEX_PLUGIN_ROOT=$(ls -d "$HOME/.claude/plugins/cache/openai-codex/codex"/*/ 2>/dev/null | sort -V | tail -1)
+```
+
+  If that resolves to nothing, or a companion-script call reports a missing or unauthenticated
+  CLI, apply `[codex].on_missing`: `substitute` swaps in a Claude reviewer on `fallback_model`
+  keeping the vantage, and the substitution goes in the final report; `stop` halts and tells the
+  user to install the plugin or run `/codex:setup`. Never silently drop the vantage.
 
 ## Role Contract
 
@@ -45,9 +60,11 @@ Requires Claude Code's `Agent` tool. There is no Codex-side equivalent, so this 
 - **Workers (subagents)**: implement exactly one leaf inside the files they were given. They
   never plan, never redesign, never touch files outside their ownership, and never decide a
   question the brief left open — they stop and escalate instead.
-- **Reviewers (subagents)**: read and report only. A reviewer that edits files has contaminated
-  the review; revert its writes against the snapshot (escalate first if they overlap the user's
-  pre-existing changes) and rerun it.
+- **Reviewers (Claude subagents or Codex)**: read and report only. A reviewer that edits files has
+  contaminated the review; revert its writes against the snapshot (escalate first if they overlap
+  the user's pre-existing changes) and rerun it. This applies to a Codex reviewer too — a `task`
+  call without `--write` is meant to be read-only, but verify against the snapshot rather than
+  trusting it.
 
 ## Autonomy Contract
 
@@ -133,11 +150,52 @@ diff already says.
      When two leaves genuinely cannot be made disjoint, either sequence them across waves or give
      each worker `isolation: "worktree"` and integrate the results yourself.
 
-4. **Assign models.** Planner stays on the strongest model available; workers get the cheapest
-   model that can do their leaf (`model: "haiku"` for mechanical work, `"sonnet"` for real
-   implementation). Workers dominate token volume and the planner dominates cost, so the payoff
-   is in briefing quality: once the planner has turned ambiguity into an explicit instruction, a
-   cheap model just follows it.
+4. **Assign models.** Planner stays on the strongest model available. Everything else comes from
+   `config/swarm.toml`: classify each leaf as `mechanical` or `implementation` and take the
+   worker model from `[worker]`; take the reviewer roster from the `[[reviewer]]` entries.
+   Deviate from the config only when the wave gives you a reason to, and record the reason in
+   `design.md` — the config is the default, not a cage.
+
+   Workers dominate token volume and the planner dominates cost, so the payoff is in briefing
+   quality: once the planner has turned ambiguity into an explicit instruction, a cheap model
+   just follows it.
+
+   **Workers are always Claude subagents.** The two mechanisms workers depend on — file ownership
+   enforced by dispatching through `Agent` with an explicit file list, and findings routed back to
+   one specific worker with `SendMessage` — both need a per-agent identity that the Codex runtime
+   does not expose. `--resume-last` reaches only the most recent Codex job, so with several Codex
+   workers in flight there is no way to send a finding to the right one.
+
+   **Reviewers may be either.** A reviewer reads and reports; it needs no file ownership and no
+   continuity, so nothing above binds it. Dispatch a `provider = "claude"` reviewer as a read-only
+   subagent, and a `provider = "codex"` reviewer through the companion script:
+
+```sh
+# codex_command = "task" — a free-form vantage. Omit --write: that is what keeps it read-only.
+# Genuinely asynchronous: returns a job id, then collect with `status` and `result`.
+node "${CODEX_PLUGIN_ROOT}/scripts/codex-companion.mjs" task --background "<reviewer prompt>"
+
+# codex_command = "review" or "adversarial-review" — diff-scoped native review.
+node "${CODEX_PLUGIN_ROOT}/scripts/codex-companion.mjs" review --scope working-tree
+```
+
+   Pass `--model` when the config sets one, and `--effort` only for `task` — the native review
+   entry points accept `--model` but silently ignore `--effort`. An unknown model name fails at
+   dispatch, so treat that like a missing plugin and apply `[codex].on_missing` rather than losing
+   the vantage.
+
+   The two entry points differ in a way that matters for wave timing. `task --background` really
+   does background. `review` and `adversarial-review` accept `--background` but ignore it and run
+   to completion in the foreground, so launch those through Bash with `run_in_background: true`
+   instead — otherwise one Codex reviewer serializes the whole wave and you lose the parallelism
+   the review step depends on. Either way, run the acceptance check while the reviewers work.
+
+   Codex job state is keyed by working directory. Run `task`, `status`, and `result` from the same
+   cwd — from anywhere else `status` reports `No job found` for a job that is running fine, which
+   reads exactly like a crashed reviewer and will cost you the vantage if you believe it.
+
+   A Codex reviewer is still a reviewer: check the snapshot afterwards and treat any write as
+   contamination, exactly as in the Role Contract.
 
 5. **Dispatch a wave.** Up to 6 workers, all `Agent` calls in a **single response block** so they
    run in parallel. Use `subagent_type: "general-purpose"`. Each gets a self-contained brief
@@ -251,15 +309,22 @@ Done when: no `import requests` remains in the file and `pytest tests/billing` p
 
 ## Review vantage points
 
-Pick 2–3 with deliberately different inputs.
+Pick 2–3 with deliberately different inputs. The `[[reviewer]]` entries in `config/swarm.toml`
+name which vantages are configured and who runs each.
 
-- **Diff-only** — sees `git diff` and nothing else. Catches defects in the code as written.
+- **Diff-only** — sees `git diff` and nothing else. Catches defects in the code as written. This
+  is what Codex's native `review` and `adversarial-review` already are, which is why the shipped
+  config points them here.
 - **Spec-conformance** — sees `spec.md` and the resulting code, but not the diff or the briefs.
   Catches building the right thing badly *and* the wrong thing well.
 - **Shortcut hunter** — sees the brief, the worker's report, and the diff. Catches stubs, faked
   tests, hardcoded values, and reports that overstate what was done.
 
-Vary the model between reviewers where you can; correlated reviewers miss the same things.
+Vary the model *and the provider* between reviewers where you can; correlated reviewers miss the
+same things, and a different provider decorrelates harder than a different model from the same
+family. Review accuracy holds up well on cheap models in general, but not uniformly: spec
+conformance is the vantage that degrades first, because it requires holding the spec and the code
+side by side rather than reacting to a diff. Do not put it on the cheapest model available.
 
 Tell each reviewer to report **everything it finds**, low-confidence items included, and do the
 triage yourself in step 9. Asking a reviewer to be conservative or to report only high-severity
@@ -302,7 +367,9 @@ and clear conflict, choose clear.
 
 - `status`: complete, blocked, or stopped after max waves
 - `spec`: what was built, and the acceptance-check result with the actual command output
-- `waves`: per wave — leaves dispatched, models used, findings, check result
+- `waves`: per wave — leaves dispatched, the worker and reviewer models and providers actually
+  used, findings, check result. Say plainly if a configured reviewer was substituted or dropped,
+  and why: a wave reviewed by two vantages instead of three is a weaker result than it looks.
 - `decisions`: design decisions made on the user's behalf (from `design.md`), one line of
   rationale each
 - `unresolved`: known findings not fixed, leaves not attempted, anything unverified

@@ -40,7 +40,35 @@
       "id": 6,
       "name": "reviewers-are-independent-and-read-only",
       "prompt": "The swarm's first wave just landed — three workers implemented the auth middleware, the session store, and the token refresh path. Review it before we move on.",
-      "expected_output": "Dispatches 2-3 reviewers in parallel on cheap models with deliberately different inputs (diff-only, spec-conformance, shortcut hunter), tells each to report everything including low-confidence findings, and requires file:line on every finding. Reviewers report only and never edit. The planner does the triage itself and routes real findings back to the originating worker via SendMessage rather than spawning fresh agents.",
+      "expected_output": "Reads config/swarm.toml for the reviewer roster and dispatches 2-3 reviewers in parallel with deliberately different inputs (diff-only, spec-conformance, shortcut hunter), varying provider and model. Tells each to report everything including low-confidence findings, and requires file:line on every finding. Reviewers report only and never edit. The planner does the triage itself and routes real findings back to the originating worker via SendMessage rather than spawning fresh agents.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "name": "codex-reviewer-not-codex-worker",
+      "prompt": "Swarm the migration described in docs/migrate-orm.md across the five service directories. Use Codex for as much of this as you can — I trust its judgment more than a cheap Claude model.",
+      "expected_output": "Uses Codex for the reviewer role only and says plainly why it is not used for workers: file ownership is enforced by dispatching each worker through the Agent tool with an explicit file list, and findings are routed back to a specific worker with SendMessage, neither of which the Codex runtime supports (--resume-last reaches only the most recent job). Dispatches the Codex reviewer through the codex plugin's companion script with --background and without --write, and still verifies against the snapshot that it wrote nothing. Does not silently downgrade the user's request — states the constraint and proceeds.",
+      "files": []
+    },
+    {
+      "id": 8,
+      "name": "codex-plugin-missing-falls-back",
+      "prompt": "Run a swarm on spec/parsers.md — four independent parser modules, tests already written. Review each wave before moving on.",
+      "expected_output": "Reads config/swarm.toml, sees a codex reviewer configured, and resolves CODEX_PLUGIN_ROOT before the first review wave. If the plugin is absent or the CLI is unauthenticated, applies [codex].on_missing rather than improvising: substitutes a Claude reviewer on fallback_model while KEEPING the diff-only vantage, and discloses the substitution in the final report. The failure this tests is silently dropping the vantage and reviewing the wave from two angles while reporting it as three.",
+      "files": []
+    },
+    {
+      "id": 9,
+      "name": "codex-model-and-effort-routing",
+      "prompt": "Swarm the refactor in docs/plan.md. For the Codex reviewer I want a specific GPT model and high reasoning effort — put that in the config so it sticks for future runs too.",
+      "expected_output": "Writes the model and effort into the reviewer's entry in config/swarm.toml (or swarm.local.toml) rather than hardcoding flags into one dispatch. Recognizes that effort only takes effect on codex_command = \"task\" — the native review and adversarial-review entry points parse --model but ignore --effort — and either switches that reviewer to \"task\" or tells the user the effort would be silently dropped. Does not invent a model name: if unsure what the installed CLI accepts, checks rather than guessing, since an unknown name fails at dispatch and costs the vantage.",
+      "files": []
+    },
+    {
+      "id": 10,
+      "name": "codex-review-blocks-the-wave",
+      "prompt": "Wave 2 is done. Run all three configured reviewers and the acceptance check.",
+      "expected_output": "Launches the reviewers so they actually run concurrently. Knows that codex task --background is genuinely async but codex review / adversarial-review accept --background and ignore it, so those go through Bash with run_in_background: true rather than being called inline. Runs the acceptance check itself while the reviewers work. Calls codex status and result from the same working directory the job was launched from, since job state is keyed by cwd and a mismatched cwd reports 'No job found' for a healthy job.",
       "files": []
     }
   ]
