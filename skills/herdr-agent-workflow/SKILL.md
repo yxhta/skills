@@ -46,8 +46,16 @@ Preserve these two properties when editing:
 ## Pane Setup
 
 1. Inspect Herdr state with `herdr agent list` and, when needed, `herdr pane list`.
-2. Reuse a suitable pane when its cwd matches the target repo and its role is clear from recent output or pane labels.
-3. If no implementation pane exists and the user supplied a command, create it with `herdr agent start` -- one command that splits, runs, and names the agent:
+2. Reuse a suitable pane when its cwd matches the target checkout (the worktree path, if one is in play) and its role is clear from recent output or pane labels.
+3. If the implementation agent works in a git worktree rather than the coordinator's own checkout, give it its own workspace instead of splitting into the coordinator's:
+
+```sh
+herdr workspace create --cwd <worktree-path> --label <branch-or-task> --no-focus
+```
+
+Parse `result.root_pane.pane_id` from the JSON and start the agent in that pane, instead of the split path below. One worktree, one workspace: the worktree exists to keep the implementation's file state off the coordinator's checkout, and running both in one workspace hands that back at the UI level -- panes look interchangeable, and a `--split`/`--cwd` slip drops the agent into the coordinator's checkout unnoticed. Without a worktree (agent edits the same checkout the coordinator inspects), the split path is fine.
+
+4. If no implementation pane exists and the user supplied a command, create it with `herdr agent start` -- one command that splits, runs, and names the agent:
 
 ```sh
 herdr agent start impl --cwd <repo> --split right --no-focus -- <agent-command...>
@@ -62,8 +70,8 @@ herdr pane split <current-pane-id> --direction right --cwd <repo> --no-focus
 herdr pane run <new-pane-id> "<agent-command>"
 ```
 
-4. If the command output returns JSON with a new pane ID, parse it instead of guessing the ID.
-5. When reusing an existing pane, rename it to a role label (`herdr agent rename <target> impl`) so later commands can target it by name.
+5. If the command output returns JSON with a new pane ID, parse it instead of guessing the ID.
+6. When reusing an existing pane, rename it to a role label (`herdr agent rename <target> impl`) so later commands can target it by name.
 
 If the implementation role cannot be mapped to an existing pane and no command was provided, ask the user for the implementation agent command.
 
@@ -229,7 +237,7 @@ Use this only when the user explicitly asks for an independent reviewer pane (a 
 herdr agent start review --cwd <repo> --split right --no-focus -- <review-agent-command...>
 ```
 
-(Or the split-plus-run fallback from Pane Setup if `agent start` is unavailable.)
+(Or the split-plus-run fallback from Pane Setup if `agent start` is unavailable.) The reviewer reads the same tree the implementation agent edits, so `--cwd` is that checkout -- and when that is a worktree, the review pane belongs in the implementation agent's workspace (`--workspace <id>`), not the coordinator's.
 
 2. Never allow the implementation and review agents to edit files concurrently in this mode. If the review agent changes files, stop the loop, report the contamination, and ask the user how to proceed.
 3. Send it the adversarial framing from the shared `adversarial-review` skill (`$HOME/.agents/skills/adversarial-review`). Only use the `$adversarial-review` marker if the product is known to resolve `$<skill-name>` markers -- verify rather than assume: after sending, read the pane, and if the marker text appears unexpanded in the agent's reply, it did not resolve; resend with the framing inlined. When inlining (the safe default for an unknown product), state: do not edit files; question the approach and assumptions, not just defects; report every material finding without pre-filtering by severity, since the coordinator does the filtering at step 8; keep each finding compact -- a claim, its failure scenario, and a concrete fix -- so the whole list survives one `pane read`; findings first, ordered by severity; separate required fixes from design challenges and optional suggestions; end with the marker formed by joining "HERDR_REVIEW_" and "DONE" into a single word (split for the same echo reason as the implementation prompt's marker).
