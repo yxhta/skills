@@ -15,8 +15,8 @@ Use Herdr to run an implementation loop across two panes in the target worktree'
 - The installed binary is the authority on syntax. This skill is written against the `agent prompt` / `agent wait` / `pane wait-output` surface (herdr 0.8+); if a command below is missing, run the group without a subcommand (`herdr agent`, `herdr pane`) and adapt, rather than guessing flags.
 - `codex` is on PATH for the reviewer. Default reviewer args are `-m gpt-5.6-sol` unless the user names another model or flags. Codex's approval and sandbox flags are not assumed here: if the reviewer keeps landing in `blocked` on reads like `git diff` or test runs, check `codex --help` for its read-only sandbox / approval-policy options and restart it with those.
 - Treat pane IDs as opaque. Parse them from JSON responses (`.result.pane.pane_id`, `.result.root_pane.pane_id`, `.result.agent.pane_id`), never predict them, and prefer the agent *name* as the target wherever an agent command accepts one.
-- Always pass `--timeout` to `agent start`, `agent prompt --wait`, `agent wait`, and `pane wait-output`. Without it, waits are indefinite.
-- Either agent may stop at `blocked` on an approval prompt. That is visible -- every wait in this skill returns on `blocked` -- but the coordinator must not answer the dialog on its own: read it (`herdr agent read <target> --source visible`), show it to the user, and only on their say-so respond with `herdr agent send-keys <target> <key>`, then resume with `herdr agent wait <target> --timeout <ms>`.
+- Always pass `--timeout` to `agent start`, `agent prompt --wait`, `agent wait`, and `pane wait-output`. Without it, waits are indefinite. If the coordinator's own shell tool caps command duration below the wait (Claude Code's Bash tool allows at most 600000 ms), use a `--timeout` under that cap and chain `herdr agent wait <target> --timeout <ms>` on exit 1 instead of letting the tool kill the command.
+- Either agent may stop at `blocked` on an approval prompt. That is visible -- every wait in this skill returns on `blocked` -- but the coordinator must not answer the dialog on its own: read it (`herdr agent read <target> --source visible`), show it to the user, and only on their say-so respond with `herdr agent send-keys <target> <key>`, then resume with `herdr agent wait <target> --until idle --until done --timeout <ms>`. The `--until` pair is required here: the agent is still `blocked` at that instant, and `blocked` is in the default settled set, so a plain wait returns immediately with the state you just cleared. If the dialog is still showing after the keys, resend.
 
 ## Role Contract
 
@@ -78,7 +78,7 @@ When a state looks wrong (stuck `unknown`, `done` with no marker in the output, 
    herdr agent start impl --kind <kind> --pane <impl-pane-id> --timeout 60000 -- <agent-args...>
    ```
 
-   `--kind` is required and selects the product's canonical executable; run `herdr agent` for the installed list, and ask the user for the kind rather than guessing. Arguments after `--` go to the agent unchanged. Success means Herdr detected the agent and it is ready for input, and the response carries `.result.agent.pane_id` for later pane-level commands. If it returns `agent_not_ready`, the agent came up `blocked` (a trust or onboarding dialog): the name already resolves for `agent read` and `agent send-keys`, so read the dialog, surface it to the user, and once it is cleared run `herdr agent wait impl --timeout 60000` before prompting.
+   `--kind` is required and selects the product's canonical executable; run `herdr agent` for the installed list, and ask the user for the kind rather than guessing. Arguments after `--` go to the agent unchanged. Success means Herdr detected the agent and it is ready for input, and the response carries `.result.agent.pane_id` for later pane-level commands. If it returns `agent_not_ready`, the agent came up `blocked` (a trust or onboarding dialog): the name already resolves for `agent read` and `agent send-keys`, so read the dialog, surface it to the user, and once it is cleared run `herdr agent wait impl --until idle --until done --timeout 60000` before prompting (see Preconditions for why `--until` matters here).
 
 5. Start the reviewer in a second pane of the same worktree, split from the *impl* pane (never from the coordinator's) so it lands in the right workspace and cwd:
 
@@ -218,6 +218,9 @@ Acceptance criteria:
 
 Rules:
 - Do not edit files, run formatters, or stage anything. Read-only commands only.
+- Leave no artifacts behind: if you run tests or builds, do it so nothing new
+  appears in `git status` afterwards (e.g. `PYTHONDONTWRITEBYTECODE=1`), or skip
+  the run and say so.
 - Challenge the approach, design choices, and assumptions behind the change, not
   just point defects. Check the diff actually meets the acceptance criteria.
 - Report every material finding. Do not pre-filter by severity; the coordinator
