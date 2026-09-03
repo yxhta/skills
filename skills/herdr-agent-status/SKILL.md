@@ -23,41 +23,43 @@ Run only inside Herdr. If `HERDR_ENV` is not `1`, or `herdr` commands fail to re
 
    Each workspace reports its own `agent_status`, which summarizes the panes inside it.
 
-2. Get the pane-level detail:
+2. Get the agent-level detail:
 
    ```sh
-   herdr pane list
+   herdr agent list
    ```
 
-   Each pane includes `agent` (present only for detected agent sessions, e.g. `claude`, `codex`), `agent_status`, `cwd`/`foreground_cwd`, `workspace_id`, `tab_id`, and `focused`.
+   Each entry includes `agent` (product, e.g. `claude`, `codex`), `agent_status`, `name` (when the agent was given one), `cwd`/`foreground_cwd`, `workspace_id`, `tab_id`, `pane_id`, and `focused`.
 
-3. Filter to panes where the `agent` field is present. Panes without it are plain shells (herdr's sidebar intentionally excludes these from the agent list) — mention them only if the user asks about non-agent panes too.
+3. Plain shells are not in that list. Use `herdr pane list --workspace <id>` only when the user asks about non-agent panes too.
 
 4. Present a compact table: workspace/label, agent product, `agent_status`, cwd, and pane id. Group by workspace so the user can see at a glance which projects have agents idle vs. still working.
 
 5. If the user wants to know what a specific agent is _doing_ right now (not just its status), read its recent output instead of guessing from status alone:
 
    ```sh
-   herdr pane read <pane_id> --source recent --lines 50
+   herdr agent read <name-or-pane_id> --source recent-unwrapped --lines 50
    ```
+
+   If the state itself looks wrong (a visible dialog reported as `idle`, a stuck `unknown`), `herdr agent explain <target>` shows which detection rule produced it.
 
 6. If the user wants to be notified when an agent finishes or gets stuck, offer to block on it instead of polling:
 
    ```sh
-   herdr wait agent-status <pane_id> --status done --timeout 1800000
+   herdr agent wait <name-or-pane_id> --timeout 1800000
    ```
 
-   Also useful with `--status blocked` when watching for an agent that needs input.
+   Without `--until` it returns on the first of `idle`, `done`, or `blocked`; pass `--until blocked` to watch only for an agent that needs input. Always give a `--timeout` — the wait is otherwise indefinite.
 
 ## Status meanings
 
-- `idle` — no active turn; ready for new input.
+- `idle` — at its input prompt, and its tab has been seen in the Herdr UI.
 - `working` — actively processing.
-- `blocked` — waiting on something (often user input).
-- `done` — finished a turn but the user hasn't looked at that pane yet.
-- `unknown` — no agent detected, or status could not be determined (plain shells always show this).
+- `blocked` — Herdr recognized an approval, question, or permission UI. Detection is strict: an unfamiliar dialog shape shows as `idle` instead, so confirm with a read before trusting `idle`.
+- `done` — the same state as `idle`, reached after work finished while the tab was not being viewed. CLI reads do not mark it seen; focusing the tab does.
+- `unknown` — an agent is present but its state could not be classified. Never treat it as completion.
 
 ## Notes
 
-- Treat pane/tab/workspace ids as ephemeral. Re-read them from `pane list` / `workspace list` each time rather than reusing ids from an earlier turn — they compact when panes/tabs/workspaces close.
-- This skill only reports status. To act on another agent's output (send it a task, coordinate an implement/review loop), use `herdr-agent-workflow` instead.
+- Pane/tab/workspace ids are opaque handles; parse them from command JSON rather than predicting them. A pane moved to another workspace gets a new id, so re-read after any layout change. Agent commands also accept a unique agent `name`, which follows the agent across moves.
+- This skill only reports status. To act on another agent's output (send it a task, coordinate an implement/review loop), use `herdr-workflow` instead.
