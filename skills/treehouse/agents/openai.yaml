@@ -1,0 +1,4 @@
+interface:
+  display_name: "Treehouse"
+  short_description: "Safely lease and return Treehouse worktrees through Herdr"
+  default_prompt: "Use $treehouse to safely start or finish branch work in a Treehouse-managed Herdr workspace."
