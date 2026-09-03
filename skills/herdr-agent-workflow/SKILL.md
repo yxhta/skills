@@ -145,6 +145,9 @@ Acceptance criteria:
 <criteria>
 
 Rules:
+- Before any investigation or implementation work, invoke
+  `$ponytail:ponytail full`. If that skill is unavailable, stop and report
+  instead of coding.
 - You are the only agent allowed to edit files.
 - Preserve unrelated user changes.
 - Keep changes scoped to the task, and finish the whole task -- no stubs,
