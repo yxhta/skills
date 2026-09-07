@@ -1,0 +1,4 @@
+interface:
+  display_name: "Worktree Slots"
+  short_description: "Take and hand back reusable Git worktree slots through Herdr"
+  default_prompt: "Use $worktree-slots to start or finish branch work on a reusable Herdr worktree slot."

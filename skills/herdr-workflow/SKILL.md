@@ -1,19 +1,27 @@
 ---
 name: herdr-workflow
-description: Coordinate an implementation-and-review workflow inside Herdr. Use when the user wants an agent to implement changes in a worktree and have an independent Codex reviewer agent, started in a second pane of that same worktree, adversarially review the diff -- with a coordinator managing panes, prompts, waiting, review cycles, and final reporting. Needs the `codex` CLI on PATH for the reviewer; the implementation agent can be any Herdr-supported product.
+description: Coordinate an implementation-and-review workflow inside Herdr. Use when the user wants an agent to implement changes in a worktree and have an independent reviewer agent, started in a second pane of that same worktree, adversarially review the diff -- with a coordinator managing panes, prompts, waiting, review cycles, and final reporting. Which products play `impl` and `reviewer` comes from `~/.claude/rules/herdr-workflow.md` or the user's request, not from this skill.
 ---
 
 # Herdr Agent Workflow
 
 ## Overview
 
-Use Herdr to run an implementation loop across two panes in the target worktree's workspace: `impl`, the implementation agent (the only writer), and `reviewer`, a Codex agent started in a second pane of the same worktree that reviews the diff and never edits. The reviewer is a separate process in a separate pane with no access to the implementation agent's conversation, so its critique is independent; the coordinator drives both, routes findings, and reports.
+Use Herdr to run an implementation loop across two panes in the target worktree's workspace: `impl`, the implementation agent (the only writer), and `reviewer`, a second agent started in another pane of the same worktree that reviews the diff and never edits. The reviewer is a separate process in a separate pane with no access to the implementation agent's conversation, so its critique is independent; the coordinator drives both, routes findings, and reports.
 
 ## Preconditions
 
 - Run only inside Herdr. If `HERDR_ENV=1` is not set or `herdr` commands cannot reach the socket, tell the user to start the coordinator from a Herdr pane.
 - The installed binary is the authority on syntax. This skill is written against the `agent prompt` / `agent wait` / `pane wait-output` surface (herdr 0.8+); if a command below is missing, run the group without a subcommand (`herdr agent`, `herdr pane`) and adapt, rather than guessing flags.
-- `codex` is on PATH for the reviewer. Default reviewer args are `-m gpt-5.6-sol` unless the user names another model or flags. Codex's approval and sandbox flags are not assumed here: if the reviewer keeps landing in `blocked` on reads like `git diff` or test runs, check `codex --help` for its read-only sandbox / approval-policy options and restart it with those.
+- Agent choice is injected, not fixed here. Resolve each role in this order: the user's explicit request, then a line in `~/.claude/rules/herdr-workflow.md` (read the file explicitly -- a non-Claude coordinator does not auto-load it), then ask. The file has one line per role; the first token is the Herdr kind, the rest are the agent's own arguments, passed after `--` on `herdr agent start`:
+
+  ```text
+  impl: claude
+  reviewer: codex
+  ```
+
+  A pinned model is just more tokens on that line (`reviewer: codex -m <model>`). When neither the request nor the file names a role, ask the user, listing the kinds `herdr agent` prints; do not pick a product yourself.
+- Each resolved kind must appear in `herdr agent`'s kinds list and its executable must be on PATH. Approval and sandbox flags are not assumed for either product: if the reviewer keeps landing in `blocked` on reads like `git diff` or test runs, check that product's `--help` for its read-only sandbox / approval-policy options, add them to the rule line, and restart it.
 - Treat pane IDs as opaque. Parse them from JSON responses (`.result.pane.pane_id`, `.result.root_pane.pane_id`, `.result.agent.pane_id`), never predict them, and prefer the agent *name* as the target wherever an agent command accepts one.
 - Always pass `--timeout` to `agent start`, `agent prompt --wait`, `agent wait`, and `pane wait-output`. Without it, waits are indefinite. If the coordinator's own shell tool caps command duration below the wait (Claude Code's Bash tool allows at most 600000 ms), use a `--timeout` under that cap and chain `herdr agent wait <target> --timeout <ms>` on exit 1 instead of letting the tool kill the command.
 - Either agent may stop at `blocked` on an approval prompt. That is visible -- every wait in this skill returns on `blocked` -- but the coordinator must not answer the dialog on its own: read it (`herdr agent read <target> --source visible`), show it to the user, and only on their say-so respond with `herdr agent send-keys <target> <key>`, then resume with `herdr agent wait <target> --until idle --until done --timeout <ms>`. The `--until` pair is required here: the agent is still `blocked` at that instant, and `blocked` is in the default settled set, so a plain wait returns immediately with the state you just cleared. If the dialog is still showing after the keys, resend.
@@ -22,7 +30,7 @@ Use Herdr to run an implementation loop across two panes in the target worktree'
 
 - **Coordinator**: the current agent using this skill. Owns orchestration, prompt routing, waiting, repository inspection, and final reporting.
 - **Implementation agent** (`impl`): the only writer. It edits files and runs verification.
-- **Reviewer** (`reviewer`): Codex in its own pane of the same worktree. It reads the diff and reports findings; it never edits files. Enforce that, do not just state it: before prompting the reviewer, snapshot the tree (`git -C <worktree> status --porcelain` and `git -C <worktree> diff | shasum`), and compare after it settles. Any difference is contamination -- stop the loop, report it, and ask the user how to proceed.
+- **Reviewer** (`reviewer`): the configured reviewer product in its own pane of the same worktree. It reads the diff and reports findings; it never edits files. Enforce that, do not just state it: before prompting the reviewer, snapshot the tree (`git -C <worktree> status --porcelain` and `git -C <worktree> diff | shasum`), and compare after it settles. Any difference is contamination -- stop the loop, report it, and ask the user how to proceed.
 
 The two agents are never `working` at the same time: the reviewer is prompted only after `impl` settles, and the Fix Prompt goes to `impl` only after the reviewer settles. Panes are this workflow's parallelism, not subagents. The coordinator does not spawn subagents for orchestration, waiting, or inspection.
 
@@ -64,7 +72,7 @@ When a state looks wrong (stuck `unknown`, `done` with no marker in the output, 
 
      Read the new pane from `.result.pane.pane_id`.
 
-   - Git worktree: give the implementation agent its own workspace instead of splitting into the coordinator's. If the worktree is already open as a workspace (`herdr worktree open`, e.g. via `treehouse`), reuse that workspace's root pane from `herdr pane list --workspace <id>` instead of creating another; otherwise:
+   - Git worktree: give the implementation agent its own workspace instead of splitting into the coordinator's. If the worktree is already open as a workspace (`herdr worktree open`, e.g. via `worktree-slots`), reuse that workspace's root pane from `herdr pane list --workspace <id>` instead of creating another; otherwise:
 
      ```sh
      herdr workspace create --cwd <worktree-path> --label <branch-or-task> --no-focus
@@ -78,18 +86,18 @@ When a state looks wrong (stuck `unknown`, `done` with no marker in the output, 
    herdr agent start impl --kind <kind> --pane <impl-pane-id> --timeout 60000 -- <agent-args...>
    ```
 
-   `--kind` is required and selects the product's canonical executable; run `herdr agent` for the installed list, and ask the user for the kind rather than guessing. Arguments after `--` go to the agent unchanged. Success means Herdr detected the agent and it is ready for input, and the response carries `.result.agent.pane_id` for later pane-level commands. If it returns `agent_not_ready`, the agent came up `blocked` (a trust or onboarding dialog): the name already resolves for `agent read` and `agent send-keys`, so read the dialog, surface it to the user, and once it is cleared run `herdr agent wait impl --until idle --until done --timeout 60000` before prompting (see Preconditions for why `--until` matters here).
+   `--kind` and the arguments come from the resolved `impl` line (Preconditions); `--kind` selects the product's canonical executable. Arguments after `--` go to the agent unchanged. Success means Herdr detected the agent and it is ready for input, and the response carries `.result.agent.pane_id` for later pane-level commands. If it returns `agent_not_ready`, the agent came up `blocked` (a trust or onboarding dialog): the name already resolves for `agent read` and `agent send-keys`, so read the dialog, surface it to the user, and once it is cleared run `herdr agent wait impl --until idle --until done --timeout 60000` before prompting (see Preconditions for why `--until` matters here).
 
 5. Start the reviewer in a second pane of the same worktree, split from the *impl* pane (never from the coordinator's) so it lands in the right workspace and cwd:
 
    ```sh
    herdr pane split <impl-pane-id> --direction right --cwd <worktree-path> --no-focus
-   herdr agent start reviewer --kind codex --pane <review-pane-id> --timeout 60000 -- -m gpt-5.6-sol
+   herdr agent start reviewer --kind <kind> --pane <review-pane-id> --timeout 60000 -- <agent-args...>
    ```
 
-   Codex may show a trust or onboarding dialog on first launch; handle `agent_not_ready` as in step 4. Start the reviewer once and prompt it each cycle -- do not restart it per cycle.
+   `--kind` and the arguments come from the resolved `reviewer` line. The reviewer may show a trust or onboarding dialog on first launch; handle `agent_not_ready` as in step 4. Start the reviewer once and prompt it each cycle -- do not restart it per cycle.
 
-If the implementation role cannot be mapped to an existing pane and no command was provided, ask the user for the implementation agent command.
+If the implementation role cannot be mapped to an existing pane, start the resolved `impl` product as above.
 
 ## Sending Prompts and Waiting
 

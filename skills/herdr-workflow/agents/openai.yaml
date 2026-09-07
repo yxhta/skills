@@ -1,4 +1,4 @@
 interface:
   display_name: "Herdr Agent Workflow"
-  short_description: "Coordinate an implementation agent plus an independent Codex reviewer pane in a Herdr worktree"
-  default_prompt: "Use $herdr-workflow to coordinate an implementation agent in a Herdr worktree with an independent Codex reviewer agent in a second pane of that worktree."
+  short_description: "Coordinate an implementation agent plus an independent reviewer pane in a Herdr worktree"
+  default_prompt: "Use $herdr-workflow to coordinate an implementation agent in a Herdr worktree with an independent reviewer agent in a second pane of that worktree."

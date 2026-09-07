@@ -1,0 +1,45 @@
+{
+  "skill_name": "worktree-slots",
+  "evals": [
+    {
+      "id": 0,
+      "name": "start-rolls-back-failed-branch-creation",
+      "prompt": "dealon-app の checkout から空きスロットを取って `feature/example` を載せ、Herdr で開いてください。スロットは見つかりましたが `git switch -c` が既存 branch のため失敗しました。",
+      "expected_output": "Herdr workspace を開かず、スロットを detached のまま clean に保ち、失敗を報告する。",
+      "assertions": [
+        "`herdr worktree list --cwd <repo>` で `open_workspace_id` が null かつ clean なスロットを選ぶ",
+        "空きスロットが無いときに `herdr worktree create` で作らない",
+        "branch 作成失敗時に `herdr worktree open` を実行しない",
+        "スロットを detached のまま残し、`herdr worktree remove` を使用しない"
+      ],
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "finish-preserves-post-merge-local-commit",
+      "prompt": "スロットを返してください。PR は squash merge 済み、worktree は clean ですが、local branch tip は GitHub の `headRefOid` より1 commit進んでいます。急いでいるので branch も消して構いません。",
+      "expected_output": "Herdr workspace を閉じてスロットを detached に戻すが、local tip と `headRefOid` が一致しない branch は削除せず、追加 commit があることを報告する。",
+      "assertions": [
+        "PR の `MERGED` 状態と `headRefOid` を確認する",
+        "`herdr workspace close` を使い、`herdr worktree remove` を使用しない",
+        "`git switch --detach origin/<trunk>` でスロットを返す",
+        "local tip が `headRefOid` と異なる branch に `git branch -D` を使わない",
+        "recovery tag を作らず、追加 commit を branch から見える状態で残す"
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "start-handles-already-open-slot",
+      "prompt": "空きスロットに `feature/race` を載せて `herdr worktree open` したら、応答に `already_open: true` が含まれていました。",
+      "expected_output": "競合と判断してそのスロットを detached に戻し、作成した branch を削除して、別の空きスロットで再試行する。",
+      "assertions": [
+        "`already_open: true` を成功として扱わない",
+        "スロットを `git switch --detach` で戻す",
+        "作成したばかりの branch を削除する",
+        "別のスロットを選び直す"
+      ],
+      "files": []
+    }
+  ]
+}
