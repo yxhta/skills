@@ -20,8 +20,11 @@ clean. There is no lease file and no separate tool.
   the target repository.
 - Slots live at `~/.herdr/worktrees/<repo>/slot-N` (or wherever
   `[worktrees].directory` in Herdr's config points) and were created once with
-  `git -C <repo> worktree add --detach <path> <trunk>`. Creating slots is a
-  one-time setup step, not part of every task.
+  `git -C <repo> worktree add --detach <path> <trunk>` followed by
+  `git -C <repo> worktree lock --reason worktree-slot <path>`. The lock keeps
+  `wt-cleanup` and `git worktree remove`/`prune` from deleting the slot; it
+  does not block `switch`. Creating slots is a one-time setup step, not part
+  of every task.
 - Run the finish flow from outside the target Herdr workspace. Closing the
   workspace that contains the current agent kills the agent mid-flow.
 

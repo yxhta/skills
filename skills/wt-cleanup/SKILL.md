@@ -49,6 +49,9 @@ git -C "<worktree>" status --short --branch
 git merge-base --is-ancestor "<branch>" "<trunk>"
 ```
 
+A worktree locked with reason `worktree-slot` is a reusable slot: skip it with
+`skipped: slot, finish with worktree-slots` and leave its branch alone.
+
 Remove automatically only if the worktree is clean, unlocked, has no Git
 operation in progress, and its branch is an ancestor of trunk. Squash- or
 rebase-merged branches may fail ancestry; report them for confirmation.
