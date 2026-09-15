@@ -64,6 +64,7 @@ Without the hooks the skill still works as a soft suggestion via its description
 
 ```sh
 bash evals/run.sh          # hook routing decisions, no model calls
+bash evals/run-e2e.sh      # end-to-end: real claude -p session per evals.json case, ~$0.5 each
 bash scripts/self-check    # one cheap model call; fails if the worker's fixed
                            # overhead exceeds SHUNT_OVERHEAD_MAX_TOKENS (2000)
 ```
