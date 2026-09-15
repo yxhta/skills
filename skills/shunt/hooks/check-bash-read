@@ -50,7 +50,8 @@ reads_large_file() {
   local n=""
   case "${seg%% *}" in
     head|tail) n=$(echo "$args" | sed -nE '/^-n$/{n;p;}; s/^(-n|--lines=|-)([0-9]+)$/\2/p' | head -1) ;;
-    sed) n=$(echo "$args" | sed -nE 's/^([0-9]+),([0-9]+)p$/\1 \2/p' | awk 'NR==1{print $2-$1+1}') ;;
+    sed) echo "$args" | grep -q '^-i' && return 1   # in-place edit prints nothing
+         n=$(echo "$args" | sed -nE 's/^([0-9]+),([0-9]+)p$/\1 \2/p' | awk 'NR==1{print $2-$1+1}') ;;
   esac
   case "$n" in ''|*[!0-9]*) ;; *) [ "$n" -le "$MIN_LINES" ] && return 1 ;; esac
 

@@ -667,6 +667,20 @@
       },
       "expected_decision": "allow",
       "reason": "small file, never blocked"
+    },
+    {
+      "id": 50,
+      "name": "sed-inplace-large",
+      "input": {
+        "tool_input": {
+          "command": "sed -i '' 's/foo/bar/' {{FIXTURES}}/sedbig.txt"
+        }
+      },
+      "fixture": {
+        "lines": 602
+      },
+      "expected_decision": "allow",
+      "reason": "In-place edit writes the file, nothing reaches the tool result"
     }
   ]
 }
