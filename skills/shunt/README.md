@@ -33,7 +33,7 @@ Without the hooks the skill still works as a soft suggestion via its description
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `SHUNT_MODEL` | `haiku` | Worker model passed to `claude -p --model` |
+| `SHUNT_MODEL` | `sonnet` | Worker model passed to `claude -p --model` |
 | `SHUNT_MIN_LINES` | `350` | Line count above which the hooks deny and redirect |
 | `SHUNT_MAX_PAYLOAD_BYTES` | `9000000` | Refuse a request over this size (`claude -p` caps stdin at 10MB) |
 

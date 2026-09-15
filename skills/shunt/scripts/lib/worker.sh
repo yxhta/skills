@@ -9,7 +9,7 @@
 # (they otherwise add ~100k tokens per call).
 # (--bare would do that too, but it also drops keychain/OAuth auth).
 
-SHUNT_MODEL="${SHUNT_MODEL:-haiku}"
+SHUNT_MODEL="${SHUNT_MODEL:-sonnet}"
 # claude -p caps piped stdin at 10MB; refuse early with a clear message.
 SHUNT_MAX_PAYLOAD_BYTES="${SHUNT_MAX_PAYLOAD_BYTES:-9000000}"
 

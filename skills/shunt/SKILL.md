@@ -11,7 +11,7 @@ for enforcement, PreToolUse hooks. No Codex counterpart is shipped.
 
 ## Preconditions
 
-- `claude` on PATH and logged in. `SHUNT_MODEL` picks the worker model (default `haiku`).
+- `claude` on PATH and logged in. `SHUNT_MODEL` picks the worker model (default `sonnet`).
 - Optional hooks that deny large reads and point here — install once, see `README.md`.
 
 ## bulk-read — read files without loading them
