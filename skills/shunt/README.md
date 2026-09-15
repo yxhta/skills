@@ -43,7 +43,7 @@ Without the hooks the skill still works as a soft suggestion via its description
   env prefixes, `command`/`env`/absolute-path wrappers, quoted paths, same-line `VAR=...`
   expansion, and stderr redirects, but
   `bash -c '...'`, `x=$(cat ...)`, `xargs cat`, or a pipeline whose filter matches everything (`| grep -v x`,
-  `| head -n 99999`, `head -n 350 a b c` across several files) still get through. The skill description is the primary gate; the hooks
+  `| head -n 99999`, `head -n 350 a b c` across several files, `awk`, Grep with `output_mode: content`) still get through. The skill description is the primary gate; the hooks
   catch the common accidental cases.
 
 ## Differences from the original

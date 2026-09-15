@@ -1,6 +1,6 @@
 #!/bin/bash
 # End-to-end skill evals: run each evals.json prompt in a headless claude session
-# (user hooks + skills active) and grade the tool calls from the transcript.
+# (shunt hooks + user skills active) and grade the tool calls from the transcript.
 # Usage: bash evals/run-e2e.sh [case-id ...]
 # ponytail: expectations are graded by grep on tool_use blocks; the prose
 # expectation of each case is left to the reader (final answer is printed).
@@ -8,7 +8,11 @@
 set -uo pipefail
 SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/shunt-e2e.XXXXXX")
-mkdir -p "$WORK/evals" && cp -R "$SKILL_DIR/evals/fixtures" "$WORK/evals/"
+mkdir -p "$WORK/evals" "$WORK/.claude" && cp -R "$SKILL_DIR/evals/fixtures" "$WORK/evals/"
+# The hooks live in project settings, so the workdir needs its own copy
+jq -n --arg h "$SKILL_DIR/hooks" '{hooks:{PreToolUse:[
+  {matcher:"Read", hooks:[{type:"command", command:"bash \"\($h)/check-file-size\""}]},
+  {matcher:"Bash", hooks:[{type:"command", command:"bash \"\($h)/check-bash-read\""}]}]}}' > "$WORK/.claude/settings.json"
 echo "workdir: $WORK"
 FAILED=0
 
@@ -20,14 +24,16 @@ check() { local want="$1" label="$2"; shift 2
   else printf "  \033[31mFAIL\033[0m  %s\n" "$label"; FAILED=$((FAILED + 1)); fi; }
 
 ids=${*:-1 2 3}
+n=0
 for id in $ids; do
+  n=$((n + 1))
   prompt=$(jq -r ".evals[] | select(.id==$id) | .prompt" "$SKILL_DIR/evals/evals.json")
-  T="$WORK/case-$id.jsonl"
+  T="$WORK/run$n-case-$id.jsonl"
   echo; echo "case $id: $prompt"
   (cd "$WORK" && env -u CLAUDECODE -u CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR \
       -u CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR -u CLAUDE_CODE_INCLUDE_PARTIAL_MESSAGES \
       claude -p "$prompt" --output-format stream-json --verbose \
-      --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Skill" --max-turns 25 < /dev/null > "$T" 2>"$WORK/case-$id.err")
+      --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Skill" --max-turns 25 < /dev/null > "$T" 2>"$WORK/run$n-case-$id.err")
   case $id in
     1) check yes "bulk-read with --question/--paths" tool_use Bash 'scripts/bulk-read.*--question.*--paths'
        check yes "hook denied the direct read"     grep -q 'threshold: 350' "$T"

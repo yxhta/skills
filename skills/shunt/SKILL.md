@@ -47,6 +47,7 @@ Review the output and make surgical edits for the ~5-20% that needs your judgmen
 ## When not to delegate
 
 - **Debugging** — needs your reasoning, not a summary.
-- **Editing** — you need exact content; read the section with offset/limit.
+- **Editing** — you need exact content; read the one section with offset/limit. Limited reads of a
+  large file share a 350-line budget per session, so chunking through the whole file is denied too.
 - **Small files** — under 350 lines the overhead exceeds the savings.
 - **Design decisions** — judgment stays with you.

@@ -9,13 +9,8 @@ input=$(cat)
 
 file_path=$(echo "$input" | jq -r '.tool_input.file_path // empty')
 limit=$(echo "$input" | jq -r '.tool_input.limit // empty')
-
-# Targeted reads: a limit within the threshold. An offset alone still reads
-# up to Read's default cap, so it doesn't count.
-case "$limit" in
-  ''|*[!0-9]*) ;;
-  *) [ "$limit" -gt 0 ] && [ "$limit" -le "$MIN_LINES" ] && exit 0 ;;
-esac
+offset=$(echo "$input" | jq -r '.tool_input.offset // 1')
+session=$(echo "$input" | jq -r '.session_id // empty')
 
 # Missing file — let Read report the error
 [ -z "$file_path" ] || [ ! -f "$file_path" ] && exit 0
@@ -24,5 +19,22 @@ esac
 lines=$(wc -l < "$file_path" 2>/dev/null | tr -d ' ' || echo "0")
 [ "$lines" -le "$MIN_LINES" ] && exit 0
 
-jq -n --arg reason "File is ${lines} lines (threshold: ${MIN_LINES}). Use the shunt skill: bulk-read --question ... --paths ${file_path} — instead of reading it directly. If you need exact content for editing, re-read with an offset/limit for just the section you need." \
+# Targeted reads: a limit within the threshold. An offset alone still reads
+# up to Read's default cap, so it doesn't count. Limited reads of one file
+# share a per-session budget of MIN_LINES, so chunking through the whole
+# file with offset/limit is denied like a full read; re-reading the same
+# section is free.
+# ponytail: budget is the sum of limits, overlapping ranges double count.
+state="${TMPDIR:-/tmp}/shunt-reads-${session:-nosession}"
+seen=$(grep -F "$file_path	" "$state" 2>/dev/null | awk -F'\t' '{s+=$3} END{print s+0}')
+case "$limit" in
+  ''|*[!0-9]*) ;;
+  *) if [ "$limit" -gt 0 ] && [ "$limit" -le "$MIN_LINES" ]; then
+       key=$(printf '%s\t%s\t%s' "$file_path" "$offset" "$limit")
+       [ -z "$session" ] || grep -qxF "$key" "$state" 2>/dev/null && exit 0
+       [ $((seen + limit)) -le "$MIN_LINES" ] && { printf '%s\n' "$key" >> "$state"; exit 0; }
+     fi ;;
+esac
+
+jq -n --arg reason "File is ${lines} lines (threshold: ${MIN_LINES}); ${seen} lines of it already read this session. Use the shunt skill: bulk-read --question ... --paths ${file_path} — instead of reading it directly. For editing, read only the one section you need with offset/limit (at most ${MIN_LINES} lines per file per session); reading the whole file in chunks is denied too." \
   '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $reason}}'

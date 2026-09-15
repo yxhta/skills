@@ -38,19 +38,21 @@ reads_large_file() {
   # (cat f), { cat f; }, exec cat f, if ..; then cat f, for ..; do cat f, and
   # cat <f are the same read
   seg=$(echo "$seg" | sed -E 's/^[[:space:]]*[({]?[[:space:]]*((then|do|else|exec|command|env)[[:space:]]+)*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((command|env)[[:space:]]+)?(\/[^[:space:]]*\/)?//; s/[[:space:]]*[)}][[:space:]]*$//; s/<[[:space:]]*/ /g')
-  echo "$seg" | grep -qE '^(cat|head|tail|less|more) ' || return 1
+  echo "$seg" | grep -qE '^(cat|head|tail|less|more|sed) ' || return 1
 
   # xargs parses quotes like a shell without executing anything, so
   # "docs/large file.md" stays one argument. Unbalanced quotes: no opinion.
-  args=$(echo "$seg" | sed -E 's/^(cat|head|tail|less|more) +//; s/\|.*//' | xargs printf '%s\n' 2>/dev/null) || return 1
+  args=$(echo "$seg" | sed -E 's/^(cat|head|tail|less|more|sed) +//; s/\|.*//' | xargs printf '%s\n' 2>/dev/null) || return 1
 
   # head/tail with an explicit line count within the threshold is a targeted
   # read (like Read with limit); -n +5 or an oversized count is not
-  case "${seg%% *}" in head|tail)
-    local n
-    n=$(echo "$args" | sed -nE '/^-n$/{n;p;}; s/^(-n|--lines=|-)([0-9]+)$/\2/p' | head -1)
-    case "$n" in ''|*[!0-9]*) ;; *) [ "$n" -le "$MIN_LINES" ] && return 1 ;; esac ;;
+  # sed -n 'A,Bp' is a B-A+1 line read; sed without a range prints the file
+  local n=""
+  case "${seg%% *}" in
+    head|tail) n=$(echo "$args" | sed -nE '/^-n$/{n;p;}; s/^(-n|--lines=|-)([0-9]+)$/\2/p' | head -1) ;;
+    sed) n=$(echo "$args" | sed -nE 's/^([0-9]+),([0-9]+)p$/\1 \2/p' | awk 'NR==1{print $2-$1+1}') ;;
   esac
+  case "$n" in ''|*[!0-9]*) ;; *) [ "$n" -le "$MIN_LINES" ] && return 1 ;; esac
 
   while IFS= read -r arg; do
     # Expand $VAR / ${VAR} assigned earlier in the same command line

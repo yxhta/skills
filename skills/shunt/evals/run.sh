@@ -8,6 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FIXTURES=$(mktemp -d "$PWD/.shunt-evals.XXXXXX")
 FIXTURES_REL=${FIXTURES#"$PWD"/}
 trap 'rm -rf "$FIXTURES"' EXIT
+# Per-session read budgets from earlier runs
+rm -f "${TMPDIR:-/tmp}"/shunt-reads-eval-*
 PASSED=0
 FAILED=0
 TOTAL=0

@@ -611,6 +611,62 @@
       "fixture": null,
       "expected_decision": "allow",
       "reason": "count is found wherever it appears in the args"
+    },
+    {
+      "id": 46,
+      "name": "sed-range-small",
+      "input": {
+        "tool_input": {
+          "command": "sed -n '21,60p' {{FIXTURES}}/sedbig.txt"
+        }
+      },
+      "fixture": {
+        "lines": 602
+      },
+      "expected_decision": "allow",
+      "reason": "sed range of 40 lines is a targeted read"
+    },
+    {
+      "id": 47,
+      "name": "sed-range-whole-file",
+      "input": {
+        "tool_input": {
+          "command": "sed -n '21,601p' {{FIXTURES}}/sedbig.txt"
+        }
+      },
+      "fixture": {
+        "lines": 602
+      },
+      "expected_decision": "block",
+      "reason": "sed range of 581 lines dumps the file"
+    },
+    {
+      "id": 48,
+      "name": "sed-substitute-large",
+      "input": {
+        "tool_input": {
+          "command": "sed 's/foo/bar/' {{FIXTURES}}/sedbig.txt"
+        }
+      },
+      "fixture": {
+        "lines": 602
+      },
+      "expected_decision": "block",
+      "reason": "sed without a -n range prints the whole file"
+    },
+    {
+      "id": 49,
+      "name": "sed-small-file",
+      "input": {
+        "tool_input": {
+          "command": "sed -n '5p' {{FIXTURES}}/sedsmall.txt"
+        }
+      },
+      "fixture": {
+        "lines": 100
+      },
+      "expected_decision": "allow",
+      "reason": "small file, never blocked"
     }
   ]
 }

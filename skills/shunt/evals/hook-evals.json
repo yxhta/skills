@@ -261,6 +261,74 @@
       },
       "expected_decision": "block",
       "reason": "A limit above the threshold is a full read in disguise"
+    },
+    {
+      "id": 19,
+      "name": "chunk-1-within-budget",
+      "input": {
+        "session_id": "eval-chunk",
+        "tool_input": {
+          "file_path": "{{FIXTURES}}/chunked.txt",
+          "offset": 1,
+          "limit": 300
+        }
+      },
+      "fixture": {
+        "lines": 602
+      },
+      "expected_decision": "allow",
+      "reason": "First limited read of the session fits the budget"
+    },
+    {
+      "id": 20,
+      "name": "chunk-1-again-free",
+      "input": {
+        "session_id": "eval-chunk",
+        "tool_input": {
+          "file_path": "{{FIXTURES}}/chunked.txt",
+          "offset": 1,
+          "limit": 300
+        }
+      },
+      "fixture": {
+        "lines": 602
+      },
+      "expected_decision": "allow",
+      "reason": "Re-reading the same section costs nothing"
+    },
+    {
+      "id": 21,
+      "name": "chunk-2-over-budget",
+      "input": {
+        "session_id": "eval-chunk",
+        "tool_input": {
+          "file_path": "{{FIXTURES}}/chunked.txt",
+          "offset": 301,
+          "limit": 302
+        }
+      },
+      "fixture": {
+        "lines": 602
+      },
+      "expected_decision": "block",
+      "reason": "Second chunk would exceed the per-session budget (300+302 > 350)"
+    },
+    {
+      "id": 22,
+      "name": "chunk-small-section-ok",
+      "input": {
+        "session_id": "eval-chunk",
+        "tool_input": {
+          "file_path": "{{FIXTURES}}/chunked.txt",
+          "offset": 400,
+          "limit": 40
+        }
+      },
+      "fixture": {
+        "lines": 602
+      },
+      "expected_decision": "allow",
+      "reason": "A small extra section still fits (300+40 <= 350)"
     }
   ]
 }
