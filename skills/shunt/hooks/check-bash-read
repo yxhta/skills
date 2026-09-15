@@ -1,0 +1,100 @@
+#!/bin/bash
+# PreToolUse(Bash): deny cat/head/tail/less/more on large files, redirect to the shunt skill.
+# Silence (no output) means "no opinion" — the normal permission flow applies.
+# ponytail: heuristic parser, not a shell grammar; the skill description is the primary gate.
+
+MIN_LINES="${SHUNT_MIN_LINES:-350}"
+case "$MIN_LINES" in ''|*[!0-9]*) MIN_LINES=350 ;; esac
+
+input=$(cat)
+
+command=$(echo "$input" | jq -r '.tool_input.command // empty')
+[ -z "$command" ] && exit 0
+
+# Returns 0 when one simple command (no && ; ||) dumps a large file into the tool result.
+reads_large_file() {
+  local seg="$1" args arg f lines
+
+  # stderr redirections (2>/dev/null, 2>&1) don't change what reaches stdout
+  seg=$(echo "$seg" | sed -E 's/[[:space:]]2>>?[[:space:]]*(&1|[^[:space:]]+)//g')
+
+  # Operators inside quotes (awk '$0 > 0') are data, not redirects or pipes
+  local ops
+  ops=$(echo "$seg" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g")
+
+  # A pipeline is a targeted read only when some downstream stage is one that
+  # clearly cuts the output down (| grep, | head, | wc). | sort, | sed, | cat
+  # re-emit the whole file.
+  if echo "$ops" | grep -qE '\|'; then
+    echo "$ops" | sed 's/^[^|]*|//' | tr '|' '\n' \
+      | grep -qE '^[[:space:]]*(grep|egrep|fgrep|rg|head|tail|wc)([[:space:]]|$)' && return 1
+  fi
+
+  # Redirections to a file (cat file > out) don't reach the tool result; >&2 does
+  echo "$ops" | grep -qE '>[[:space:]]*[^&[:space:]]' && return 1
+
+  # Leading env assignments (FOO=bar cat file), command/env wrappers, and
+  # absolute paths (/bin/cat file) all reduce to the bare command name
+  # (cat f), { cat f; }, exec cat f, if ..; then cat f, for ..; do cat f, and
+  # cat <f are the same read
+  seg=$(echo "$seg" | sed -E 's/^[[:space:]]*[({]?[[:space:]]*((then|do|else|exec|command|env)[[:space:]]+)*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((command|env)[[:space:]]+)?(\/[^[:space:]]*\/)?//; s/[[:space:]]*[)}][[:space:]]*$//; s/<[[:space:]]*/ /g')
+  echo "$seg" | grep -qE '^(cat|head|tail|less|more) ' || return 1
+
+  # xargs parses quotes like a shell without executing anything, so
+  # "docs/large file.md" stays one argument. Unbalanced quotes: no opinion.
+  args=$(echo "$seg" | sed -E 's/^(cat|head|tail|less|more) +//; s/\|.*//' | xargs printf '%s\n' 2>/dev/null) || return 1
+
+  # head/tail with an explicit line count within the threshold is a targeted
+  # read (like Read with limit); -n +5 or an oversized count is not
+  case "${seg%% *}" in head|tail)
+    local n
+    n=$(echo "$args" | sed -nE '/^-n$/{n;p;}; s/^(-n|--lines=|-)([0-9]+)$/\2/p' | head -1)
+    case "$n" in ''|*[!0-9]*) ;; *) [ "$n" -le "$MIN_LINES" ] && return 1 ;; esac ;;
+  esac
+
+  while IFS= read -r arg; do
+    # Expand $VAR / ${VAR} assigned earlier in the same command line
+    for name in "${!SHUNT_VAR_@}"; do
+      arg=${arg//\$\{${name#SHUNT_VAR_}\}/${!name}}
+      arg=${arg//\$${name#SHUNT_VAR_}/${!name}}
+    done
+    case "$arg" in -*|'') continue ;; esac
+    # Anything still dynamic can't be checked statically: fail closed
+    case "$arg" in
+      *'$'*|*'*'*|*'?'*|*'['*|*'`'*)
+        SHUNT_HIT_FILE="$arg"; SHUNT_HIT_LINES="unknown (unexpanded path)"
+        return 0 ;;
+    esac
+    case "$arg" in /*) ;; *) arg="$SHUNT_CWD/$arg" ;; esac
+    [ -f "$arg" ] || continue
+    lines=$(wc -l < "$arg" 2>/dev/null | tr -d ' ' || echo "0")
+    if [ "$lines" -gt "$MIN_LINES" ]; then
+      SHUNT_HIT_FILE="$arg"; SHUNT_HIT_LINES="$lines"
+      return 0
+    fi
+  done <<< "$args"
+  return 1
+}
+
+# Compound commands (cd x && cat file; FOO=1 cat file): check every segment,
+# resolving relative paths against any earlier cd
+SHUNT_CWD="$PWD"
+SHUNT_VAR_PWD="$PWD"
+SHUNT_VAR_HOME="$HOME"
+hit=1
+while IFS= read -r segment; do
+  if dir=$(echo "$segment" | sed -nE 's/^[[:space:]]*cd[[:space:]]+([^[:space:]]+).*/\1/p') && [ -n "$dir" ]; then
+    dir=$(echo "$dir" | tr -d '"'"'" | sed "s|^~|$HOME|")
+    SHUNT_CWD=$(cd "$SHUNT_CWD" && cd "$dir" 2>/dev/null && pwd) || SHUNT_CWD="$PWD"
+    continue
+  fi
+  if assignment=$(echo "$segment" | sed -nE 's/^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=([^[:space:]]*)[[:space:]]*$/\1=\2/p') && [ -n "$assignment" ]; then
+    printf -v "SHUNT_VAR_${assignment%%=*}" '%s' "$(echo "${assignment#*=}" | tr -d '"'"'")"
+    continue
+  fi
+  reads_large_file "$segment" && { hit=0; break; }
+done < <(echo "$command" | sed -E 's/&&|;|\|\|/\n/g')
+[ "$hit" -ne 0 ] && exit 0
+
+jq -n --arg reason "File is ${SHUNT_HIT_LINES} lines (threshold: ${MIN_LINES}). Use the shunt skill: bulk-read --question ... --paths \"${SHUNT_HIT_FILE}\" — instead of cat/head/tail. If the file is small, spell out the literal path (no variables or globs) and retry." \
+  '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $reason}}'

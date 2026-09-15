@@ -1,0 +1,20 @@
+#!/bin/bash
+# Measures the worker's fixed per-call overhead with a one-word message.
+# The flags in worker.sh are version-sensitive: if Claude Code starts loading
+# MCP schemas, plugins, or CLAUDE.md into the worker again, the overhead jumps
+# from a few hundred tokens to tens of thousands without any visible error.
+# Exit 1 when it exceeds SHUNT_OVERHEAD_MAX_TOKENS (default 2000).
+set -euo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/lib/worker.sh"
+shunt_preflight || exit 1
+command -v jq >/dev/null 2>&1 || { echo "Error: jq is required" >&2; exit 1; }
+
+max="${SHUNT_OVERHEAD_MAX_TOKENS:-2000}"
+json=$(shunt_claude --system-prompt "Reply with the single word ok." --output-format json <<< "hi")
+tokens=$(echo "$json" | jq '.usage | .input_tokens + .cache_creation_input_tokens + .cache_read_input_tokens')
+cost=$(echo "$json" | jq '.total_cost_usd')
+
+echo "worker fixed overhead: $tokens input tokens (\$$cost) on $SHUNT_MODEL, limit $max"
+[ "$tokens" -le "$max" ] && exit 0
+echo "FAIL: overhead over limit. Something is being loaded into the worker context; check the claude flags in scripts/lib/worker.sh against the installed Claude Code version." >&2
+exit 1

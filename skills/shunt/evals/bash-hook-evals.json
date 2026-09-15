@@ -1,0 +1,616 @@
+{
+  "skill_name": "shunt",
+  "description": "Evals for the check-bash-read PreToolUse hook",
+  "evals": [
+    {
+      "id": 1,
+      "name": "cat-large-file",
+      "input": {
+        "tool_input": {
+          "command": "cat {{FIXTURES}}/large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "Plain cat on large file — should block"
+    },
+    {
+      "id": 2,
+      "name": "cat-small-file",
+      "input": {
+        "tool_input": {
+          "command": "cat {{FIXTURES}}/small.txt"
+        }
+      },
+      "fixture": {
+        "lines": 100
+      },
+      "expected_decision": "allow",
+      "reason": "Small file — not worth delegating"
+    },
+    {
+      "id": 3,
+      "name": "cat-with-flag",
+      "input": {
+        "tool_input": {
+          "command": "cat -n {{FIXTURES}}/large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "cat with -n flag — should still block"
+    },
+    {
+      "id": 4,
+      "name": "head-large-file",
+      "input": {
+        "tool_input": {
+          "command": "head {{FIXTURES}}/large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "head on large file — should block"
+    },
+    {
+      "id": 5,
+      "name": "head-with-count",
+      "input": {
+        "tool_input": {
+          "command": "head -100 {{FIXTURES}}/large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "allow",
+      "reason": "head -100 reads 100 lines, within the threshold — a targeted read like Read with limit"
+    },
+    {
+      "id": 6,
+      "name": "tail-large-file",
+      "input": {
+        "tool_input": {
+          "command": "tail {{FIXTURES}}/large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "tail on large file — should block"
+    },
+    {
+      "id": 7,
+      "name": "less-large-file",
+      "input": {
+        "tool_input": {
+          "command": "less {{FIXTURES}}/large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "less on large file — should block"
+    },
+    {
+      "id": 8,
+      "name": "cat-pipe",
+      "input": {
+        "tool_input": {
+          "command": "cat {{FIXTURES}}/large.txt | grep export"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "allow",
+      "reason": "Piped command — targeted read"
+    },
+    {
+      "id": 9,
+      "name": "cat-redirect",
+      "input": {
+        "tool_input": {
+          "command": "cat {{FIXTURES}}/large.txt > /tmp/out.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "allow",
+      "reason": "Redirect — copying file, not reading into context"
+    },
+    {
+      "id": 10,
+      "name": "non-read-command",
+      "input": {
+        "tool_input": {
+          "command": "git status"
+        }
+      },
+      "fixture": null,
+      "expected_decision": "allow",
+      "reason": "Not a file read command"
+    },
+    {
+      "id": 11,
+      "name": "grep-command",
+      "input": {
+        "tool_input": {
+          "command": "grep -n 'export' {{FIXTURES}}/large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "allow",
+      "reason": "grep is a targeted search — not caught"
+    },
+    {
+      "id": 12,
+      "name": "cat-quoted-path",
+      "input": {
+        "tool_input": {
+          "command": "cat \"{{FIXTURES}}/large.txt\""
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "Quoted path — should still be caught"
+    },
+    {
+      "id": 13,
+      "name": "cat-nonexistent",
+      "input": {
+        "tool_input": {
+          "command": "cat /tmp/shunt-does-not-exist.txt"
+        }
+      },
+      "fixture": null,
+      "expected_decision": "allow",
+      "reason": "File doesn't exist — let Bash handle the error"
+    },
+    {
+      "id": 14,
+      "name": "empty-command",
+      "input": {
+        "tool_input": {
+          "command": ""
+        }
+      },
+      "fixture": null,
+      "expected_decision": "allow",
+      "reason": "Empty command — pass through"
+    },
+    {
+      "id": 15,
+      "name": "missing-command-field",
+      "input": {
+        "tool_input": {}
+      },
+      "fixture": null,
+      "expected_decision": "allow",
+      "reason": "No command field — pass through"
+    },
+    {
+      "id": 16,
+      "name": "more-large-file",
+      "input": {
+        "tool_input": {
+          "command": "more {{FIXTURES}}/large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "more on large file — only regex-matched command without coverage"
+    },
+    {
+      "id": 17,
+      "name": "head-n-space-count",
+      "input": {
+        "tool_input": {
+          "command": "head -n 5 {{FIXTURES}}/large.txt"
+        }
+      },
+      "fixture": null,
+      "expected_decision": "allow",
+      "reason": "head -n 5 is a targeted read; the count after -n is honored"
+    },
+    {
+      "id": 18,
+      "name": "cat-stderr-redirect",
+      "input": {
+        "tool_input": {
+          "command": "cat {{FIXTURES}}/stderr-large.txt 2>/dev/null"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "2> only redirects stderr — stdout still dumps the file"
+    },
+    {
+      "id": 19,
+      "name": "cat-pipe-cat",
+      "input": {
+        "tool_input": {
+          "command": "cat {{FIXTURES}}/pipecat-large.txt | cat"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "Passthrough pipe still dumps the whole file"
+    },
+    {
+      "id": 20,
+      "name": "cat-pipe-grep-then-cat",
+      "input": {
+        "tool_input": {
+          "command": "cat {{FIXTURES}}/pipegrep-large.txt | grep foo | cat"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "allow",
+      "reason": "grep downstream makes it a targeted read"
+    },
+    {
+      "id": 21,
+      "name": "cat-multi-file-second-large",
+      "input": {
+        "tool_input": {
+          "command": "cat {{FIXTURES}}/small.txt {{FIXTURES}}/multi-large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "Every file argument is checked, not just the first"
+    },
+    {
+      "id": 22,
+      "name": "cat-after-cd",
+      "input": {
+        "tool_input": {
+          "command": "cd /tmp && cat {{FIXTURES}}/cd-large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "Compound command: read after && is still checked"
+    },
+    {
+      "id": 23,
+      "name": "cat-env-prefix",
+      "input": {
+        "tool_input": {
+          "command": "FOO=bar cat {{FIXTURES}}/env-large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "Leading env assignment is skipped, read still checked"
+    },
+    {
+      "id": 24,
+      "name": "cat-quoted-space-path",
+      "input": {
+        "tool_input": {
+          "command": "cat \"{{FIXTURES}}/quoted large.txt\""
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "Quoted path with a space stays one argument"
+    },
+    {
+      "id": 25,
+      "name": "cat-stderr-dup",
+      "input": {
+        "tool_input": {
+          "command": "cat {{FIXTURES}}/dup-large.txt >&2"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": ">&2 still lands in the tool result"
+    },
+    {
+      "id": 26,
+      "name": "cat-redirect-after-cd",
+      "input": {
+        "tool_input": {
+          "command": "cd /tmp && cat {{FIXTURES}}/cdredir-large.txt > /tmp/x"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "allow",
+      "reason": "Redirect to a file inside a compound command"
+    },
+    {
+      "id": 27,
+      "name": "cat-pipe-sort",
+      "input": {
+        "tool_input": {
+          "command": "cat {{FIXTURES}}/sort-large.txt | sort"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "sort re-emits the whole file"
+    },
+    {
+      "id": 28,
+      "name": "cat-relative-after-cd",
+      "input": {
+        "tool_input": {
+          "command": "cd {{FIXTURES}} && cat rel-large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "Relative path resolved against the preceding cd"
+    },
+    {
+      "id": 29,
+      "name": "command-cat",
+      "input": {
+        "tool_input": {
+          "command": "command cat {{FIXTURES}}/cmd-large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "command wrapper is normalized away"
+    },
+    {
+      "id": 30,
+      "name": "abs-path-cat",
+      "input": {
+        "tool_input": {
+          "command": "/bin/cat {{FIXTURES}}/abs-large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "Absolute command path is normalized away"
+    },
+    {
+      "id": 31,
+      "name": "env-cat",
+      "input": {
+        "tool_input": {
+          "command": "env FOO=1 cat {{FIXTURES}}/envw-large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "env wrapper with assignment is normalized away"
+    },
+    {
+      "id": 32,
+      "name": "cat-stderr-redirect-spaced",
+      "input": {
+        "tool_input": {
+          "command": "cat {{FIXTURES}}/err2-large.txt 2> /tmp/shunt.err"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "2> with a space is still a stderr redirect"
+    },
+    {
+      "id": 33,
+      "name": "cat-var-path",
+      "input": {
+        "tool_input": {
+          "command": "FILE={{FIXTURES}}/var-large.txt; cat \"$FILE\""
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "Variable assigned earlier in the command is expanded"
+    },
+    {
+      "id": 34,
+      "name": "cat-pwd-var",
+      "input": {
+        "tool_input": {
+          "command": "cat \"$PWD/{{FIXTURES_REL}}/pwd-large.txt\""
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "$PWD is expanded"
+    },
+    {
+      "id": 35,
+      "name": "cat-glob",
+      "input": {
+        "tool_input": {
+          "command": "cat {{FIXTURES}}/glob-large*.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "Globs can't be checked statically: fail closed"
+    },
+    {
+      "id": 36,
+      "name": "cat-unknown-var",
+      "input": {
+        "tool_input": {
+          "command": "cat \"$SOMEWHERE/file.txt\""
+        }
+      },
+      "fixture": {
+        "lines": 0
+      },
+      "expected_decision": "block",
+      "reason": "Unresolved variable: fail closed"
+    },
+    {
+      "id": 37,
+      "name": "cat-pipe-awk-quoted-gt",
+      "input": {
+        "tool_input": {
+          "command": "cat {{FIXTURES}}/awk-large.txt | awk '$0 > 0'"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "'>' inside quotes is not a redirect; awk re-emits everything"
+    },
+    {
+      "id": 38,
+      "name": "subshell-cat",
+      "input": {
+        "tool_input": {
+          "command": "(cat {{FIXTURES}}/sub-large.txt)"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "Subshell grouping is stripped"
+    },
+    {
+      "id": 39,
+      "name": "exec-cat",
+      "input": {
+        "tool_input": {
+          "command": "exec cat {{FIXTURES}}/exec-large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "exec prefix is stripped"
+    },
+    {
+      "id": 40,
+      "name": "if-then-cat",
+      "input": {
+        "tool_input": {
+          "command": "if true; then cat {{FIXTURES}}/if-large.txt; fi"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "then prefix inside control flow is stripped"
+    },
+    {
+      "id": 41,
+      "name": "cat-stdin-redirect",
+      "input": {
+        "tool_input": {
+          "command": "cat <{{FIXTURES}}/stdin-large.txt"
+        }
+      },
+      "fixture": {
+        "lines": 800
+      },
+      "expected_decision": "block",
+      "reason": "< redirection is the same read"
+    },
+    {
+      "id": 42,
+      "name": "head-n-over-threshold",
+      "input": {
+        "tool_input": {
+          "command": "head -n 999 {{FIXTURES}}/large.txt"
+        }
+      },
+      "fixture": null,
+      "expected_decision": "block",
+      "reason": "count above the threshold is still a bulk read"
+    },
+    {
+      "id": 43,
+      "name": "tail-n-plus",
+      "input": {
+        "tool_input": {
+          "command": "tail -n +5 {{FIXTURES}}/large.txt"
+        }
+      },
+      "fixture": null,
+      "expected_decision": "block",
+      "reason": "+5 means \"from line 5 on\", not a count"
+    },
+    {
+      "id": 44,
+      "name": "head-long-lines-flag",
+      "input": {
+        "tool_input": {
+          "command": "head --lines=20 {{FIXTURES}}/large.txt"
+        }
+      },
+      "fixture": null,
+      "expected_decision": "allow",
+      "reason": "--lines=N form is honored"
+    },
+    {
+      "id": 45,
+      "name": "head-count-after-file",
+      "input": {
+        "tool_input": {
+          "command": "head {{FIXTURES}}/large.txt -n 20"
+        }
+      },
+      "fixture": null,
+      "expected_decision": "allow",
+      "reason": "count is found wherever it appears in the args"
+    }
+  ]
+}

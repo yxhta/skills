@@ -1,0 +1,28 @@
+#!/bin/bash
+# PreToolUse(Read): deny full-file reads on large files, redirect to the shunt skill.
+# Silence (no output) means "no opinion" — the normal permission flow applies.
+
+MIN_LINES="${SHUNT_MIN_LINES:-350}"
+case "$MIN_LINES" in ''|*[!0-9]*) MIN_LINES=350 ;; esac
+
+input=$(cat)
+
+file_path=$(echo "$input" | jq -r '.tool_input.file_path // empty')
+limit=$(echo "$input" | jq -r '.tool_input.limit // empty')
+
+# Targeted reads: a limit within the threshold. An offset alone still reads
+# up to Read's default cap, so it doesn't count.
+case "$limit" in
+  ''|*[!0-9]*) ;;
+  *) [ "$limit" -gt 0 ] && [ "$limit" -le "$MIN_LINES" ] && exit 0 ;;
+esac
+
+# Missing file — let Read report the error
+[ -z "$file_path" ] || [ ! -f "$file_path" ] && exit 0
+
+# Small files — delegation overhead isn't worth it
+lines=$(wc -l < "$file_path" 2>/dev/null | tr -d ' ' || echo "0")
+[ "$lines" -le "$MIN_LINES" ] && exit 0
+
+jq -n --arg reason "File is ${lines} lines (threshold: ${MIN_LINES}). Use the shunt skill: bulk-read --question ... --paths ${file_path} — instead of reading it directly. If you need exact content for editing, re-read with an offset/limit for just the section you need." \
+  '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $reason}}'

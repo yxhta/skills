@@ -1,0 +1,68 @@
+#!/bin/bash
+# Delegate boilerplate generation to a cheap worker model
+# Usage: code-write --spec "write tests for UserService" --reference ref.test.ts --target out.test.ts
+
+. "$(cd "$(dirname "$0")" && pwd)/lib/worker.sh"
+
+MODE_NAME="code-writer"
+INSTRUCTIONS="You generate code files based on a spec and reference files. Match the existing patterns, conventions, naming, and style exactly. Output only the code — no explanations, no markdown fences unless asked. If the spec is ambiguous, make reasonable choices that match the patterns in the reference code."
+
+spec=""
+reference=""
+target=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --spec)      [ $# -ge 2 ] || { echo "Error: --spec needs a value" >&2; exit 1; }; spec="$2"; shift 2 ;;
+    --reference) [ $# -ge 2 ] || { echo "Error: --reference needs a value" >&2; exit 1; }; reference="$2"; shift 2 ;;
+    --target)    [ $# -ge 2 ] || { echo "Error: --target needs a value" >&2; exit 1; }; target="$2"; shift 2 ;;
+    *)           shift ;;
+  esac
+done
+
+if [ -z "$spec" ]; then
+  echo "Error: --spec is required" >&2
+  exit 1
+fi
+
+# A bare spec would generate context-free code that matches nothing in the
+# project — fail loudly rather than write plausible-looking output.
+if [ -z "$reference" ]; then
+  echo "Error: --reference is required — pass a file whose patterns the output should match." >&2
+  echo "For a follow-up, reference the file the previous call just generated." >&2
+  exit 1
+fi
+if [ ! -f "$reference" ] || [ ! -r "$reference" ]; then
+  echo "Error: reference file not found or unreadable: $reference" >&2
+  exit 1
+fi
+
+shunt_preflight || exit 1
+shunt_tmpfile message_file || exit 1
+shunt_tmpfile answer_file || exit 1
+
+printf 'Spec: %s\n\nReference:\n' "$spec" > "$message_file"
+cat "$reference" >> "$message_file"
+
+shunt_invoke "$INSTRUCTIONS" "$message_file" > "$answer_file" || exit 1
+
+# Strip only a wrapping markdown fence (model sometimes wraps despite
+# instructions); fences inside the generated content are legitimate.
+clean=$(sed -e '1{/^```/d;}' -e '${/^```[[:space:]]*$/d;}' "$answer_file")
+
+if [ -z "$clean" ]; then
+  echo "Error: worker returned no code (empty after fence stripping); target left untouched." >&2
+  exit 1
+fi
+
+# Write to target (atomically, so a failure never truncates an existing file) or stdout
+if [ -n "$target" ]; then
+  tmp=$(mktemp "$(dirname "$target")/.shunt.XXXXXX") || { echo "Error: could not write in $(dirname "$target")" >&2; exit 1; }
+  printf '%s\n' "$clean" > "$tmp" && mv "$tmp" "$target" || { rm -f "$tmp"; echo "Error: could not write $target" >&2; exit 1; }
+  echo "Wrote $(wc -l < "$target" | tr -d ' ') lines to $target" >&2
+else
+  echo "$clean"
+fi
+
+# Token usage to stderr
+echo "[shunt: delegated to $MODE_NAME/$SHUNT_MODEL]" >&2
