@@ -1,0 +1,27 @@
+name: Cache keepalive
+
+on:
+  pull_request:
+    paths:
+      - skills/cache-keepalive/**
+      - .github/workflows/cache-keepalive.yml
+  push:
+    branches: [main]
+    paths:
+      - skills/cache-keepalive/**
+      - .github/workflows/cache-keepalive.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Validate and test without credentials or inference
+        run: |
+          npm install --prefix "$RUNNER_TEMP/cache-keepalive-cli" --no-audit --no-fund @anthropic-ai/claude-code@2.1.289 typescript@5.9.3
+          CLAUDE_BIN="$RUNNER_TEMP/cache-keepalive-cli/node_modules/.bin/claude" TSC_BIN="$RUNNER_TEMP/cache-keepalive-cli/node_modules/.bin/tsc" skills/cache-keepalive/scripts/verify.sh
+          git diff --check
