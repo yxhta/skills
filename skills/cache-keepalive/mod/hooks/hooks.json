@@ -1,0 +1,4 @@
+{
+  "description": "Inactive until /cache-ping start",
+  "modules": ["./register.ts"]
+}
