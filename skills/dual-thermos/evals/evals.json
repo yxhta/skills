@@ -1,0 +1,26 @@
+{
+  "skill_name": "dual-thermos",
+  "evals": [
+    {
+      "id": 1,
+      "name": "dual-review-with-fix-loop",
+      "prompt": "このブランチを Claude と Codex の両方で thermos レビューして、指摘は直して再レビューまで回して。",
+      "expected_output": "Records the merge base once, then each round launches the two Claude Thermos agents and a fresh read-only Codex companion task (no --write, no --resume-last) before waiting for either. Claude alone edits files, runs verification after each fix cycle, stops after at most 3 fix cycles, and reports per-round counts from both hosts plus open and dismissed findings.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "single-thermos-should-not-trigger",
+      "prompt": "/thermos でこの PR をレビューだけして。修正はしないで。",
+      "expected_output": "Runs plain Thermos as a review-only pass. Does NOT start the dual-thermos fix loop and does not edit files.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "missing-codex-plugin-blocks",
+      "prompt": "dual-thermos で今の変更をレビューして直して。(the codex plugin is not installed)",
+      "expected_output": "Resolves CODEX_PLUGIN_ROOT, finds it empty, and stops with a message that the codex plugin is not installed. Does not fall back to a Claude-only review presented as a dual review.",
+      "files": []
+    }
+  ]
+}
