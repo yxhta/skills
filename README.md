@@ -19,3 +19,9 @@ npx skills add yxhta/skills --skill <name>
 Each skill lives under `skills/<name>/` with a `SKILL.md` (flat layout, per the
 `npx skills` convention). Some skills carry agent-specific config alongside
 `SKILL.md` (e.g. `agents/openai.yaml`, `config/notion.toml`).
+
+## Claude Code Mods
+
+- [cache-keepalive](skills/cache-keepalive/README.md): an experimental, opt-in
+  50-minute cache ping with explicit one-hour TTLs and a bounded run. Installing
+  the skill does not enable the Mod or send model requests.
