@@ -1,6 +1,6 @@
 ---
 name: dual-thermos
-description: Run the Thermos review independently on both Claude and Codex, then let Claude fix the findings and re-review in a loop (at most 3 fix cycles). Use when the user asks for a Claude-and-Codex Thermos review, a "dual thermos", or a Thermos review with automatic fix rounds. Do not use for a single Thermos pass without fixes (run /thermos directly) or for a plain Codex review loop (use claude-codex-workflow).
+description: Run the Thermos review independently on both Claude and Codex, then let Claude fix the findings and re-review in a loop (at most 3 fix cycles). Use when the user asks for a Claude-and-Codex Thermos review, a "dual thermos", or a Thermos review with automatic fix rounds. Do not use for a single Thermos pass without fixes (run /pstack:thermos directly) or for a plain Codex review loop (use claude-codex-workflow).
 argument-hint: "[scope: PR number, base ref, or path] [--max-cycles N]"
 ---
 
@@ -14,13 +14,13 @@ Claude-specific: this skill drives the Claude Code `Agent` tool and the `codex` 
 
 ## Preconditions
 
-1. Resolve the Thermos skill file. `thermos` sets `disable-model-invocation`, so read the file instead of calling the Skill tool:
+1. Resolve the Thermos skill file from the `pstack@pstack-claude` plugin. Codex needs the absolute path, so resolve the file instead of only calling the Skill tool:
 
    ```sh
-   THERMOS_SKILL=$(realpath "$HOME/.claude/skills/thermos/SKILL.md" 2>/dev/null)
+   THERMOS_SKILL=$(ls -d "$HOME/.claude/plugins/cache/pstack-claude/pstack"/*/skills/thermos/SKILL.md 2>/dev/null | sort -V | tail -1)
    ```
 
-   If it is empty, stop and tell the user Thermos is not installed. Read `SKILL.md` and its `references/runtime-adaptation.md` in full before round 1.
+   If it is empty, stop and tell the user the pstack plugin is not installed. Read `SKILL.md` in full before round 1.
 
 2. Resolve the codex plugin runtime:
 
@@ -36,7 +36,7 @@ Claude-specific: this skill drives the Claude Code `Agent` tool and the `codex` 
 
 - **Claude (the agent using this skill)** coordinates the loop and is the only one that edits files. It fixes findings, runs verification, and writes the report.
 - **Claude Thermos reviewer** runs the Thermos workflow from `THERMOS_SKILL`: two fresh background agents (correctness and quality) on the scope, then a synthesis. These agents only review.
-- **Codex Thermos reviewer** runs `$thermos` inside Codex through the companion `task` command without `--write`, which keeps Codex in a read-only sandbox. Codex only reviews.
+- **Codex Thermos reviewer** follows `THERMOS_SKILL` inside Codex through the companion `task` command without `--write`, which keeps Codex in a read-only sandbox. Codex only reviews.
 
 Neither reviewer sees the other's report in the same round. Independence is the point of running two hosts.
 
@@ -61,14 +61,14 @@ Escalate only for:
 
 2. **Review round.** Start both reviewers before waiting for either.
 
-   - Claude side. Follow `THERMOS_SKILL` and its runtime adaptation: gather the diff and changed-file contents, then launch both Thermos agents in one message with `run_in_background: true`. Synthesize their reports as Thermos describes.
+   - Claude side. Follow `THERMOS_SKILL`: gather the diff and changed-file contents, then launch both `pstack:thermo-nuclear-*-subagent` agents in one message with `run_in_background: true`. Synthesize their reports as Thermos describes.
    - Codex side. Run in the background:
 
      ```sh
      node "${CODEX_PLUGIN_ROOT}/scripts/codex-companion.mjs" task "<prompt>"
      ```
 
-     The prompt gives Codex the absolute `THERMOS_SKILL` path and tells it to use the `$thermos` skill on the recorded scope (base SHA, head, working-tree inclusion), to report only and never edit files, and to return findings as `severity | file:line | issue | evidence`. Always start a fresh task. Do not pass `--resume-last`.
+     The prompt gives Codex the absolute `THERMOS_SKILL` path and tells it to read that file in full, including its Codex platform mapping, and follow it on the recorded scope (base SHA, head, working-tree inclusion), to report only and never edit files, and to return findings as `severity | file:line | issue | evidence`. Always start a fresh task. Do not pass `--resume-last`.
 
    If one side fails, retry it once. If it fails again, mark the round incomplete and stop.
 
