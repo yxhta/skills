@@ -28,13 +28,13 @@
     },
     {
       "id": 2,
-      "name": "busy-herdr-pane-blocks-removal",
-      "prompt": "Herdr 内で stale worktree を cleanup してください。対象 worktree は Git 上 clean ですが、その配下を foreground_cwd に持つ pane で agent_status=working の agent が動いています。",
-      "expected_output": "Git status が clean でも実行中 agent の未保存状態を考慮し、pane・worktree・branch を閉じたり削除したりせず skip する。",
+      "name": "busy-terminal-blocks-removal",
+      "prompt": "stale worktree を cleanup してください。対象 worktree は Git 上 clean ですが、その配下を cwd に持つ hc ターミナルで status=working の agent が動いています。",
+      "expected_output": "Git status が clean でも実行中 agent の未保存状態を考慮し、ターミナル・space・worktree・branch を閉じたり削除したりせず skip する。",
       "assertions": [
-        "`herdr pane list` の `result.panes` を新しく取得する",
-        "working agent の pane または tab を閉じない",
-        "対象 worktree と branch を保持し、busy pane を skip 理由として報告する"
+        "`hc ls` を新しく取得する",
+        "working agent のターミナルや space を閉じない",
+        "対象 worktree と branch を保持し、busy なターミナルを skip 理由として報告する"
       ],
       "files": []
     }

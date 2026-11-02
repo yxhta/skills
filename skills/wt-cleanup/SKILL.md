@@ -1,6 +1,6 @@
 ---
 name: wt-cleanup
-description: Use when obsolete local Git worktrees and branches have accumulated, especially branches marked `[gone]`, or when cleanup must account for Herdr panes using those worktrees.
+description: Use when obsolete local Git worktrees and branches have accumulated, especially branches marked `[gone]`, or when cleanup must account for hc terminals or herdr-app spaces using those worktrees.
 ---
 
 # Worktree Cleanup
@@ -58,23 +58,30 @@ rebase-merged branches may fail ancestry; report them for confirmation.
 
 Before acting, classify every candidate as `remove` or `skip` with a reason.
 
-### 3. Handle Herdr occupants
+### 3. Handle terminal occupants
 
-When `HERDR_ENV=1`, run `herdr pane list` immediately before removal. Read
-`result.panes`; compare `foreground_cwd`, or `cwd` when absent, using path
-boundaries.
-
-Skip if a matching pane has a working agent, editor, server, or unclear
-foreground process. If safe, close the tab when every pane matches; otherwise
-close only matching panes:
+Immediately before removal, read who is in the worktree:
 
 ```bash
-herdr tab close <tab_id>
-herdr pane close <pane_id>
+hc ls | jq '.terminals[] | select(.state == "live") | {address, agent, status, cwd}'
+herdr-app ls | jq '.spaces[] | {id, folder, terminals: [.tabs[].terminals[].terminal]}'
 ```
 
-Herdr ids are ephemeral. Re-run `herdr pane list` before each close and never
-close the current pane.
+Match a terminal when its `cwd` is the worktree path or under it, using path
+boundaries. Match a space when its `folder` is the worktree path.
+
+Skip if a matching terminal is an agent (`agent` set and `status` not
+`done`/`idle`), an editor, a server, or anything unclear (`hc read <t>` shows
+the screen). If safe, close the space when every terminal in it matches;
+otherwise end only the matching terminals:
+
+```bash
+herdr-app do space.close --id <space_id> --confirmed true
+hc kill <t> && hc rm <t>
+```
+
+Re-run `hc ls` before each close and never close the current terminal
+(`$HC_TERMINAL_ID`) or the space that holds it.
 
 ### 4. Remove eligible entries
 
@@ -100,9 +107,9 @@ If it fails, preserve the branch. Apply the force-delete rule above.
 
 Return one row per candidate:
 
-| Branch | Worktree | Herdr action | Result |
+| Branch | Worktree | Terminal action | Result |
 |---|---|---|---|
-| `feat/merged` | `/path/to/wt` | closed tab `w2:t1` | removed |
+| `feat/merged` | `/path/to/wt` | closed space `sp1a2b` | removed |
 | `fix/dirty` | `/path/to/wt` | none | skipped: uncommitted changes |
 
 Finish with removed/skipped counts and the exact reason for every skip.
