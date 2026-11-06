@@ -4,23 +4,23 @@
     {
       "id": 0,
       "name": "gone-does-not-prove-merged",
-      "prompt": "不要な worktree と branch を掃除して。fetch --prune 済みで、`feat/merged` と `wip/unmerged` が `[gone]`。前者は trunk の ancestor で clean な linked worktree、後者は worktree なしで trunk にない固有コミットが3つある。",
-      "expected_output": "`feat/merged` の worktree と branch は安全なコマンドで削除する。`wip/unmerged` は `[gone]` だけを根拠に `-D` せず、固有コミットがあるため保持して報告する。",
+      "prompt": "不要な worktree と branch を掃除して。fetch --prune 済みで、`feat/merged` と `wip/unmerged` が `[gone]`。前者は `wt list` で integrated の clean な linked worktree、後者は worktree なしで default branch にない固有コミットが3つある。",
+      "expected_output": "`feat/merged` は `wt remove` で worktree と branch を削除する。`wip/unmerged` は `[gone]` だけを根拠に `-D` せず、固有コミットがあるため保持して報告する。",
       "assertions": [
         "`[gone]` を merged の証拠として扱わない",
-        "`feat/merged` には `git worktree remove` と `git branch -d` を使用する",
+        "`feat/merged` には `-D` や `--force` なしの `wt remove` を使用する",
         "`wip/unmerged` を削除せず、固有コミットを理由に skip する",
-        "明示的な branch-specific authorization なしに `git branch -D` を使用しない"
+        "明示的な branch-specific authorization なしに `-D` を使用しない"
       ],
       "files": []
     },
     {
       "id": 1,
       "name": "dirty-worktree-is-preserved",
-      "prompt": "`fix/dirty` は `[gone]` で trunk に merge 済みですが、linked worktree に未追跡ファイルと変更中のファイルがあります。ほかの clean な候補と一緒に cleanup してください。",
+      "prompt": "`fix/dirty` は `[gone]` で `wt list` 上 integrated ですが、linked worktree に未追跡ファイルと変更中のファイルがあります。ほかの clean な候補と一緒に cleanup してください。",
       "expected_output": "clean な候補だけを処理し、`fix/dirty` の worktree と branch は両方保持する。未コミット変更を skip 理由として明示する。",
       "assertions": [
-        "dirty worktree に `git worktree remove --force` を使わない",
+        "dirty worktree に `wt remove --force` や `git worktree remove --force` を使わない",
         "`fix/dirty` の branch も削除しない",
         "処理を全体中断せず、安全な他候補と skip 候補を個別に報告する"
       ],
@@ -28,13 +28,25 @@
     },
     {
       "id": 2,
-      "name": "busy-terminal-blocks-removal",
-      "prompt": "stale worktree を cleanup してください。対象 worktree は Git 上 clean ですが、その配下を cwd に持つ hc ターミナルで status=working の agent が動いています。",
-      "expected_output": "Git status が clean でも実行中 agent の未保存状態を考慮し、ターミナル・space・worktree・branch を閉じたり削除したりせず skip する。",
+      "name": "busy-process-blocks-removal",
+      "prompt": "stale worktree を cleanup してください。対象 worktree は Git 上 clean で integrated ですが、その配下を cwd にした agent のプロセスが動いています。",
+      "expected_output": "Git status が clean でも実行中プロセスの未保存状態を考慮し、プロセスを kill せず、worktree と branch を削除せず skip する。",
       "assertions": [
-        "`hc ls` を新しく取得する",
-        "working agent のターミナルや space を閉じない",
-        "対象 worktree と branch を保持し、busy なターミナルを skip 理由として報告する"
+        "削除直前に worktree 配下を cwd に持つプロセスを確認する",
+        "プロセスを kill せず、`wt remove --reap` も使わない",
+        "対象 worktree と branch を保持し、動作中のプロセスを skip 理由として報告する"
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "squash-merged-branch-is-removed",
+      "prompt": "`feat/squashed` は GitHub で squash merge 済みで `[gone]`。`git merge-base --is-ancestor` は失敗するが、`wt list` では integrated。clean な linked worktree がある。掃除して。",
+      "expected_output": "ancestry の失敗で止まらず、Worktrunk の integrated 判定を根拠に `wt remove` で削除する。`-D` は使わない。",
+      "assertions": [
+        "ancestry チェックの失敗を理由に skip しない",
+        "`-D` なしの `wt remove` で削除する",
+        "結果を `branch_outcome` に基づいて報告する"
       ],
       "files": []
     }
