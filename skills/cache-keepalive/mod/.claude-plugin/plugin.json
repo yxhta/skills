@@ -1,0 +1,6 @@
+{
+  "name": "cache-keepalive",
+  "version": "0.1.0",
+  "description": "Opt-in, bounded prompt-cache keepalive for an explicitly configured one-hour cache",
+  "author": { "name": "yxhta" }
+}

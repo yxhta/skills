@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A personal collection of Claude Code Agent Skills, installable via [`npx skills`](https://github.com/vercel-labs/skills). There is no build, lint, or test tooling — the repository is pure content (Markdown skill definitions plus small config files). "Development" here means writing/editing `SKILL.md` files and their sidecar config.
+A personal collection of Claude Code Agent Skills, installable via [`npx skills`](https://github.com/vercel-labs/skills). The repository has no root build or test runner. Most skills are Markdown definitions with sidecar config or scripts. Runtime plugins keep their tests beside the owning skill. For `cache-keepalive`, run `skills/cache-keepalive/scripts/verify.sh` with an installed Claude Code CLI.
 
 ## Layout
 
